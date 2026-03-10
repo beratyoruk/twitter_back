@@ -294,6 +294,29 @@ def menu_list():
         print(f"  [{s['id']}] {s['email']} — {durum}")
     print()
 
+def menu_close():
+    sessions = db_all()
+    # Sadece açık olanları listelemek daha mantıklı olabilir ama genel listeyi kullanabiliriz.
+    open_sessions = [s for s in sessions if s["status"] == "open"]
+    if not open_sessions:
+        print("Kapatılacak açık oturum yok.")
+        return
+    menu_list()
+    try:
+        sid = int(input("Durdurulacak oturum ID (0=iptal): "))
+    except ValueError:
+        return
+        
+    s = next((x for x in open_sessions if x["id"] == sid), None)
+    if not s:
+        print("Geçersiz veya zaten kapalı bir ID.")
+        return
+        
+    print("  → Tarayıcı kapatılıyor...")
+    kill_all_chrome_for_profile(s["profile_dir"])
+    db_set_status(sid, "closed", None)
+    print(f"✓ {s['email']} durduruldu. Bilgiler saklandı, daha sonra tekrar açabilirsiniz.")
+
 def menu_delete():
     sessions = db_all()
     if not sessions:
@@ -381,8 +404,9 @@ def main():
         print("\n=== Twitter Otomasyon Merkezi ===")
         print("1. Yeni Oturum Ekle (Otomatik Google Girişi)")
         print("2. Oturumları Listele")
-        print("3. Oturum Sil (Tarayıcı + DB + Profil)")
-        print("4. Kayıtlı Oturumları Aç (Google + Twitter)")
+        print("3. Açık Oturumu Durdur / Kapat")
+        print("4. Oturum Sil (Tarayıcı + DB + Profil)")
+        print("5. Kayıtlı Oturumları Aç (Google + Twitter)")
         print("0. Çıkış")
         print("=================================")
 
@@ -393,8 +417,10 @@ def main():
         elif choice == "2":
             menu_list()
         elif choice == "3":
-            menu_delete()
+            menu_close()
         elif choice == "4":
+            menu_delete()
+        elif choice == "5":
             menu_open()
         elif choice == "0":
             print("Çıkış.")
