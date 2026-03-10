@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import shutil
+import pyautogui
 
 SESSIONS_FILE = "sessions.json"
 CONFIG_FILE = "config.json"
@@ -56,14 +57,47 @@ def is_pid_alive(pid):
     except Exception:
         return False
 
-def launch_browser(chrome_path, profile_dir, extension_path, url):
-    args = [
-        chrome_path,
-        f"--user-data-dir={profile_dir}",
-        f"--load-extension={extension_path}",
-    ] + CHROME_FLAGS + [url]
+def launch_browser(chrome_path, profile_dir, extension_path, urls):
+    """urls: tek string veya liste — birden fazla url = birden fazla sekme."""
+    if isinstance(urls, str):
+        urls = [urls]
+    args = [chrome_path, f"--user-data-dir={profile_dir}", f"--load-extension={extension_path}"] + CHROME_FLAGS + urls
     proc = subprocess.Popen(args)
     return proc.pid
+
+def autotype(text, interval=0.07):
+    """OS seviyesinde karakter karakter yazar — Google CDP görmez."""
+    pyautogui.PAUSE = 0
+    for ch in text:
+        pyautogui.typewrite(ch if ch.isascii() else '', interval=0)
+        if not ch.isascii():
+            pyautogui.hotkey('ctrl', 'a') # fallback: patlamayı önle
+            import subprocess as _sp
+            _sp.run(['clip'], input=ch.encode('utf-16'), check=False)
+            pyautogui.hotkey('ctrl', 'v')
+        time.sleep(interval)
+
+def auto_google_login(email, password):
+    """
+    Tarayıcı odaklanmış / ön planda olduğu sürece pyautogui ile
+    OS seviyesinde e-posta ve şifreyi yazar. Google CDP görmez.
+    """
+    print("  → E-posta giriliyor...")
+    time.sleep(4.5)                  # Sayfa yüklensin
+    pyautogui.click()                # Sayfa odağı al
+    time.sleep(0.5)
+    pyautogui.typewrite(email, interval=0.08)
+    time.sleep(0.3)
+    pyautogui.press('enter')
+
+    print("  → Şifre giriliyor...")
+    time.sleep(3.5)                  # Şifre alanı yüklensin
+    pyautogui.typewrite(password, interval=0.09)
+    time.sleep(0.3)
+    pyautogui.press('enter')
+
+    print("  → Giriş gönderildi. 2FA varsa tarayıcıdan tamamlayın.")
+    time.sleep(5)
 
 def menu_add_session():
     config = load_config()
@@ -75,7 +109,9 @@ def menu_add_session():
         return
 
     email = input("Google Mail Adresi: ").strip()
-    if not email:
+    password = input("Şifre: ").strip()
+    if not email or not password:
+        print("Mail ve şifre boş bırakılamaz.")
         return
 
     sessions = load_sessions()
@@ -87,13 +123,14 @@ def menu_add_session():
     os.makedirs(profile_dir, exist_ok=True)
 
     print(f"\n→ Tarayıcı açılıyor: {email}")
-    print("→ Google hesabına giriş yapın.")
-    print("→ Giriş tamamlandıktan sonra bu terminale geri dönüp Enter'a basın.\n")
+    print("  Lütfen 5 saniye boyunca başka bir şeye tıklamayın!\n")
 
     pid = launch_browser(chrome_path, profile_dir, extension_path, "https://accounts.google.com/signin")
-    input("[Enter] Giriş tamamlandı...")
+    auto_google_login(email, password)
 
-    # Tarayıcıyı kapat — profil kaydedildi
+    # 2FA varsa kullanıcı tamamlasın
+    input("\n[Enter] Giriş tamamlandı, devam et...")
+
     try:
         subprocess.call(["taskkill", "/F", "/T", "/PID", str(pid)])
     except Exception:
@@ -103,7 +140,6 @@ def menu_add_session():
     sessions.append({"email": email, "profile_dir": profile_dir, "pid": None})
     save_sessions(sessions)
     print(f"\n✓ Oturum kaydedildi: {email}")
-    print("  '4. Kayıtlı Oturumları Aç' ile istediğiniz zaman açabilirsiniz.")
 
 def menu_list_sessions():
     sessions = load_sessions()
@@ -131,17 +167,14 @@ def menu_delete_session():
         return
 
     s = sessions.pop(idx)
-    # Eğer çalışan bir işlem varsa onu öldür
     if is_pid_alive(s.get("pid")):
         subprocess.call(["taskkill", "/F", "/T", "/PID", str(s["pid"])])
 
     save_sessions(sessions)
-
     sil = input(f"Profil dosyaları da silinsin mi? ({s['email']}) [e/h]: ").lower()
     if sil == "e":
         shutil.rmtree(s["profile_dir"], ignore_errors=True)
         print("Profil silindi.")
-
     print(f"✓ Oturum kaldırıldı: {s['email']}")
 
 def menu_open_sessions():
@@ -183,19 +216,23 @@ def menu_open_sessions():
         if is_pid_alive(s.get("pid")):
             print(f"Zaten açık: {s['email']}")
             continue
-        pid = launch_browser(chrome_path, s["profile_dir"], extension_path, "https://twitter.com/")
+        # Profil çerezleri var → Google sekmesi + Twitter sekmesi aynı anda aç
+        pid = launch_browser(
+            chrome_path, s["profile_dir"], extension_path,
+            ["https://myaccount.google.com/", "https://twitter.com/"]
+        )
         sessions[idx]["pid"] = pid
-        print(f"✓ Açıldı: {s['email']} (PID: {pid})")
+        print(f"✓ Açıldı: {s['email']} (Google + Twitter — PID: {pid})")
 
     save_sessions(sessions)
 
 def main():
     while True:
         print("\n=== Twitter Otomasyon Merkezi ===")
-        print("1. Yeni Oturum Ekle (Google Girişi)")
+        print("1. Yeni Oturum Ekle (Otomatik Google Girişi)")
         print("2. Oturumları Listele")
         print("3. Oturum Sil")
-        print("4. Kayıtlı Oturumları Aç")
+        print("4. Kayıtlı Oturumları Aç (Google + Twitter)")
         print("0. Çıkış")
         print("=================================")
 
