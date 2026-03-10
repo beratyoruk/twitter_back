@@ -13,11 +13,15 @@ from account_manager import (
     register_session
 )
 from browser_manager import start_session, stop_session
+from setup_browser import setup_ungoogled_chromium
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def main():
+    print("Sistem gereksinimleri kontrol ediliyor...")
+    setup_ungoogled_chromium()
+    
     print("Dinamik betik sunucusu başlatılıyor...")
     api_server = subprocess.Popen([sys.executable, "server.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
