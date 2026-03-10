@@ -47,6 +47,21 @@ def get_available_account():
     conn.close()
     return account
 
+def login_account(username, password):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM accounts WHERE username = ?", (username,))
+    row = cursor.fetchone()
+    if not row:
+        cursor.execute("INSERT INTO accounts (username, password, status) VALUES (?, ?, 'in_use')", (username, password))
+        acc_id = cursor.lastrowid
+    else:
+        acc_id = row[0]
+        cursor.execute("UPDATE accounts SET password = ?, status = 'in_use' WHERE id = ?", (password, acc_id))
+    conn.commit()
+    conn.close()
+    return (acc_id, username, password)
+
 def release_account(account_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()

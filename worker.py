@@ -75,20 +75,30 @@ def start_worker(account_id, username, password, profile_dir):
             return
             
         page = browser.pages[0] if browser.pages else browser.new_page()
-        page.goto("https://twitter.com/login")
+        page.goto("https://accounts.google.com/signin")
         
         try:
-            page.wait_for_selector('input[autocomplete="username"]', timeout=5000)
-            page.fill('input[autocomplete="username"]', username)
+            page.wait_for_selector('input[type="email"]', timeout=8000)
+            print(f"[{username}] Google hesabı ekranı açıldı, mail giriliyor...")
+            # İnsan gibi yazma gecikmesi (delay) ekliyoruz
+            page.type('input[type="email"]', username, delay=120)
             page.keyboard.press('Enter')
             
-            page.wait_for_selector('input[name="password"]', timeout=5000)
-            page.fill('input[name="password"]', password)
+            time.sleep(3)
+            page.wait_for_selector('input[type="password"]', timeout=10000)
+            time.sleep(1) # Kısa bir insani duraksama
+            print(f"[{username}] Şifre giriliyor...")
+            page.type('input[type="password"]', password, delay=150)
             page.keyboard.press('Enter')
             
-            print(f"[{username}] Worker giriş denemesini tamamladı.")
+            print(f"[{username}] Google giriş adımları tamamlandı.")
+            time.sleep(5)
+            # Google logini sonrası asıl görev olan Twitter'a veya ana sekmeye yönel
+            page.goto("https://twitter.com/")
         except Exception:
-            pass
+            print(f"[{username}] Zaten oturum açık olabilir veya ek güvenlik (telefon) onayı gerekiyor.")
+            # Her ihtimale karşı oturum zaten açıksa da Twitter sayfasına devam edelim
+            page.goto("https://twitter.com/")
             
         print(f"[{username}] Worker çalışıyor. Çıkmak için işlemi sonlandırın.")
         try:

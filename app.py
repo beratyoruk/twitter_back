@@ -6,6 +6,7 @@ import subprocess
 
 from account_manager import (
     get_available_account,
+    login_account,
     release_account,
     get_all_sessions,
     add_account,
@@ -41,14 +42,17 @@ def main():
             choice = input("Seçiminiz: ")
             
             if choice == '1':
-                account = get_available_account()
-                if not account:
-                    print("Uyarı: Müsait hesap bulunamadı!")
+                username = input("Google Mail Adresi: ")
+                password = input("Şifresi: ")
+                
+                if not username or not password:
+                    print("Uyarı: Mail ve Şifre boş bırakılamaz!")
                     input("Devam etmek için Enter'a basın...")
                     continue
-                
+                    
+                account = login_account(username, password)
                 acc_id, username, password = account
-                print(f"[{username}] için yeni oturum başlatılıyor...")
+                print(f"[{username}] için oturum başlatılıyor...")
                 pid = start_session(acc_id, username, password)
                 if pid:
                     register_session(acc_id, pid)
