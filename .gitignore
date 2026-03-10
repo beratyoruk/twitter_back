@@ -1,45 +1,12 @@
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
 venv/
 .env
-
-# Playwright
-.playwright/
-
-# DB
-db.json
 db.sqlite3
-
-# Browser profiles
 profiles/
-
-# Logs
 logs/
-
-# Auto-downloaded stuff
 ungoogled_installer.exe
 ungoogled_chromium/
 memory-bank/
+worker_log.txt
+current_script.js
