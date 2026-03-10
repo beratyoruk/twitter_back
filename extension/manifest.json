@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Dinamik Twitter Betik Calistirici",
+  "version": "1.1",
+  "description": "Terminalden verilen JS betigini otomatik anlik ceker ve Twitter sekmelerinde calistirir.",
+  "permissions": ["scripting", "tabs"],
+  "host_permissions": ["*://*.twitter.com/*", "*://twitter.com/*", "http://127.0.0.1:9090/"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
