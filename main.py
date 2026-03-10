@@ -45,28 +45,97 @@ def save_sessions(sessions):
     with open(SESSIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(sessions, f, indent=2, ensure_ascii=False)
 
+def lock_path(profile_dir):
+    return os.path.join(profile_dir, ".session_running")
+
 def is_profile_running(profile_dir):
-    """Verilen profil diziniyle çalışan bir Chrome/Chromium süreci var mı?"""
+    """Lock dosyasına yazar'ı hala yaşıyor mu kontrol eder (PID kontrolü)."""
+    lp = lock_path(profile_dir)
+    if not os.path.exists(lp):
+        return False
     try:
+        with open(lp, "r") as f:
+            pid = int(f.read().strip())
+        # PowerShell ile PID kontrolü
         result = subprocess.run(
-            ['wmic', 'process', 'where', 'name="chrome.exe"', 'get', 'commandline'],
-            capture_output=True, text=True, timeout=5
+            ["powershell", "-Command", f"(Get-Process -Id {pid} -ErrorAction SilentlyContinue) -ne $null"],
+            capture_output=True, text=True, timeout=4
         )
-        normalized = profile_dir.replace("/", "\\").lower()
-        return normalized in result.stdout.lower()
+        alive = result.stdout.strip().lower() == "true"
+        if not alive:
+            os.remove(lp)
+        return alive
     except Exception:
+        try:
+            os.remove(lp)
+        except Exception:
+            pass
         return False
 
+def write_lock(profile_dir, pid):
+    lp = lock_path(profile_dir)
+    with open(lp, "w") as f:
+        f.write(str(pid))
+
+def remove_lock(profile_dir):
+    lp = lock_path(profile_dir)
+    try:
+        os.remove(lp)
+    except Exception:
+        pass
+
+def kill_profile(profile_dir):
+    """Profil dizinine sahip tüm chrome.exe süreçlerini sonlandırır."""
+    lp = lock_path(profile_dir)
+    try:
+        if os.path.exists(lp):
+            with open(lp) as f:
+                pid = f.read().strip()
+            subprocess.run(
+                ["powershell", "-Command", f"Stop-Process -Id {pid} -Force -ErrorAction SilentlyContinue"],
+                capture_output=True
+            )
+            os.remove(lp)
+    except Exception:
+        pass
+
 def launch_browser(chrome_path, profile_dir, extension_path, urls):
-    """urls: tek string veya liste — birden fazla url = birden fazla sekme."""
     if isinstance(urls, str):
         urls = [urls]
-    args = [chrome_path, f"--user-data-dir={profile_dir}", f"--load-extension={extension_path}"] + CHROME_FLAGS + urls
+    args = [
+        chrome_path,
+        f"--user-data-dir={profile_dir}",
+        f"--load-extension={extension_path}",
+    ] + CHROME_FLAGS + urls
     proc = subprocess.Popen(args)
-    return proc.pid
+    time.sleep(2)
+    # Ana Chrome işleminin gerçek PID'ini bul (en yüksek bellek kullanan chrome.exe)
+    real_pid = find_real_chrome_pid(profile_dir) or proc.pid
+    write_lock(profile_dir, real_pid)
+    return real_pid
 
-def focus_browser_window(timeout=12):
-    """Chromium/Chrome penceresini bulur ve odağa alır."""
+def find_real_chrome_pid(profile_dir):
+    """user-data-dir içeren Chrome sürecinin PID'ini PowerShell ile bulur."""
+    try:
+        safe_path = profile_dir.replace("\\", "\\\\")
+        cmd = (
+            f"Get-WmiObject Win32_Process | "
+            f"Where-Object {{$_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*{os.path.basename(profile_dir)}*'}} | "
+            f"Sort-Object WorkingSetSize -Descending | "
+            f"Select-Object -First 1 -ExpandProperty ProcessId"
+        )
+        result = subprocess.run(
+            ["powershell", "-Command", cmd],
+            capture_output=True, text=True, timeout=6
+        )
+        pid_str = result.stdout.strip()
+        if pid_str.isdigit():
+            return int(pid_str)
+    except Exception:
+        pass
+    return None
+
+def focus_browser_window(timeout=15):
     import pygetwindow as gw
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -83,10 +152,7 @@ def focus_browser_window(timeout=12):
     return False
 
 def auto_google_login(email, password):
-    """
-    OS seviyesinde klavye simülasyonu ile Google girişi yapar.
-    pyautogui CDP kullanmaz — Google bot tespiti yapamaz.
-    """
+    import pyperclip
     print("  → Tarayıcı penceresi bekleniyor...")
     if not focus_browser_window(timeout=15):
         print("  ! Tarayıcı penceresi bulunamadı, manuel giriş yapın.")
@@ -94,8 +160,6 @@ def auto_google_login(email, password):
 
     print("  → E-posta giriliyor...")
     time.sleep(2)
-    pyautogui.hotkey('ctrl', 'a')
-    import pyperclip
     pyperclip.copy(email)
     pyautogui.hotkey('ctrl', 'v')
     time.sleep(0.4)
@@ -110,8 +174,6 @@ def auto_google_login(email, password):
 
     print("  → Giriş gönderildi. 2FA varsa tarayıcıda tamamlayın.")
     time.sleep(4)
-
-
 
 def menu_add_session():
     config = load_config()
@@ -142,16 +204,11 @@ def menu_add_session():
     pid = launch_browser(chrome_path, profile_dir, extension_path, "https://accounts.google.com/signin")
     auto_google_login(email, password)
 
-    # 2FA varsa kullanıcı tamamlasın
     input("\n[Enter] Giriş tamamlandı, devam et...")
 
-    try:
-        subprocess.call(["taskkill", "/F", "/T", "/PID", str(pid)])
-    except Exception:
-        pass
-    time.sleep(1)
+    kill_profile(profile_dir)
 
-    sessions.append({"email": email, "profile_dir": profile_dir, "pid": None})
+    sessions.append({"email": email, "profile_dir": profile_dir})
     save_sessions(sessions)
     print(f"\n✓ Oturum kaydedildi: {email}")
 
@@ -181,10 +238,9 @@ def menu_delete_session():
         return
 
     s = sessions.pop(idx)
-    if is_profile_running(s["profile_dir"]):
-        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe", "/T"], capture_output=True)
-
+    kill_profile(s["profile_dir"])
     save_sessions(sessions)
+
     sil = input(f"Profil dosyaları da silinsin mi? ({s['email']}) [e/h]: ").lower()
     if sil == "e":
         shutil.rmtree(s["profile_dir"], ignore_errors=True)
@@ -230,13 +286,11 @@ def menu_open_sessions():
         if is_profile_running(s["profile_dir"]):
             print(f"Zaten açık: {s['email']}")
             continue
-        # Profil çerezleri var → Google sekmesi + Twitter sekmesi aynı anda aç
-        pid = launch_browser(
+        launch_browser(
             chrome_path, s["profile_dir"], extension_path,
             ["https://myaccount.google.com/", "https://twitter.com/"]
         )
-        sessions[idx]["pid"] = pid
-        print(f"✓ Açıldı: {s['email']} (Google + Twitter — PID: {pid})")
+        print(f"✓ Açıldı: {s['email']} (Google + Twitter)")
 
     save_sessions(sessions)
 
@@ -245,7 +299,7 @@ def main():
         print("\n=== Twitter Otomasyon Merkezi ===")
         print("1. Yeni Oturum Ekle (Otomatik Google Girişi)")
         print("2. Oturumları Listele")
-        print("3. Oturum Sil")
+        print("3. Oturum Sil (+ Tarayıcıyı Kapat)")
         print("4. Kayıtlı Oturumları Aç (Google + Twitter)")
         print("0. Çıkış")
         print("=================================")
