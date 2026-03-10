@@ -21,8 +21,6 @@ CHROME_FLAGS = [
     "--keep-old-history",
     "--max-connections-per-host=15",
     "--popups-to-tabs",
-    "--disable-encryption",
-    "--disable-machine-id",
     "--disable-sharing-hub",
     "--remove-tabsearch-button",
     "--disable-top-sites",
@@ -122,17 +120,33 @@ def find_chrome_pid(profile_dir):
 def kill_all_chrome_for_profile(profile_dir):
     """
     profile_dir'e ait tüm Chrome alt süreçlerini sonlandırır.
-    Tek PID yerine, komut satırında profile_dir geçen tüm chrome.exe'leri öldürür.
+    Önce nazikçe kapatmayı dener (böylece Chrome çerezleri diske kaydeder),
+    sonra kapanmayanları zorla öldürür.
     """
     base = os.path.basename(profile_dir).replace("'", "''")
     cmd = (
         f"Get-WmiObject Win32_Process | "
         f"Where-Object {{$_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*{base}*'}} | "
-        f"ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+        f"Select-Object -ExpandProperty ProcessId"
     )
     try:
-        subprocess.run(["powershell", "-Command", cmd], capture_output=True, timeout=10)
-        time.sleep(1)
+        result = subprocess.run(["powershell", "-Command", cmd], capture_output=True, timeout=10)
+        pids = result.stdout.strip().split()
+        
+        # 1. Aşama: Nazikçe kapat (Cookies veritabanını diske yazması için zaman tanır)
+        for pid in pids:
+            if pid.isdigit():
+                subprocess.run(["taskkill", "/PID", pid], capture_output=True)
+                
+        time.sleep(2.5) # Çerezlerin ve profilin diske yazılması için bekleme süresi
+        
+        # 2. Aşama: Hala açık kalan inatçı süreçler varsa zorla öldür
+        result2 = subprocess.run(["powershell", "-Command", cmd], capture_output=True, timeout=10)
+        pids2 = result2.stdout.strip().split()
+        for pid in pids2:
+            if pid.isdigit():
+                subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+                
     except Exception:
         pass
 
