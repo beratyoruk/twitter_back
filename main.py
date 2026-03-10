@@ -14,7 +14,9 @@ def run():
     config = load_config()
     chrome_path = config.get("chromium_path", "")
     extension_path = os.path.abspath(config.get("extension_path", "extension"))
-    profile_dir = os.path.join(os.getcwd(), "profiles", email.replace("@", "_").replace(".", "_"))
+    profile_dir = os.path.join(
+        os.getcwd(), "profiles", email.replace("@", "_").replace(".", "_")
+    )
     os.makedirs(profile_dir, exist_ok=True)
 
     args = [
@@ -36,6 +38,8 @@ def run():
         "--no-pings",
         "--webrtc-ip-handling-policy=default_public_interface_only",
         "--enable-features=MinimalReferrers,NoCrossOriginReferrers,ReducedSystemInfo,RemoveClientHints,SpoofWebGLInfo",
+        # Otomasyon tespitini azaltmak için
+        "--disable-blink-features=AutomationControlled",
         f"--disable-extensions-except={extension_path}",
         f"--load-extension={extension_path}",
     ]
@@ -52,6 +56,10 @@ def run():
         print("Tarayıcı açılıyor...")
         browser = p.chromium.launch_persistent_context(**kwargs)
         page = browser.pages[0] if browser.pages else browser.new_page()
+
+        # navigator.webdriver özelliğini gizle (Google bot tespitini zorlaştırır)
+        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
         page.goto("https://accounts.google.com/signin")
 
         try:
@@ -65,21 +73,24 @@ def run():
             page.type('input[type="password"]', password, delay=150)
             page.keyboard.press("Enter")
 
-            print("Giriş yapıldı. 2FA/SMS gerekiyorsa lütfen tarayıcıda tamamlayın...")
+            print("Giriş yapıldı. Gerekirse tarayıcıda 2FA/SMS adımını tamamlayın...")
+            # Google onay/doğrulama ekranlarını geçene kadar bekle (süresiz)
             page.wait_for_url(lambda url: "accounts.google.com" not in url, timeout=0)
 
             print("Giriş tamamlandı. Twitter'a yönlendiriliyor...")
             page.goto("https://twitter.com/")
         except Exception:
-            print("Giriş zaten yapılmış veya ek adım gerekiyor. Devam ediliyor...")
+            print("Profil zaten aktif veya ek adım gerekli. Devam ediliyor...")
             try:
                 page.goto("https://twitter.com/")
             except Exception:
                 pass
 
-        print("Oturum aktif. Pencereyi kapattığınızda program sonlanır.")
+        print("Oturum aktif. Bu terminal penceresini açık tutun. Tarayıcıyı kapattığınızda oturum sonlanır.")
+        # Tarayıcı kapanana kadar bekle
         try:
-            browser.wait_for_event("close", timeout=0)
+            while browser.pages:
+                time.sleep(2)
         except Exception:
             pass
 

@@ -1,16 +1,21 @@
-# Push Log (Versiyon ve Değişiklik Kayıtları)
+# Push Log
 
-Bu dosya, Github'a yapılan her yüklemede (push) nelerin değiştiğini, güncellendiğini ve eklendiğini kayıt altında tutmak için oluşturulmuştur.
+## [v1.2.0] - 2026-03-11
+**Proje Sadeleştirme + Kullanıcı Kurulum Rehberi**
+- Proje tek bir işe (`main.py`) indirgendi; tüm gereksiz dosyalar silindi.
+- `README.md` baştan yazıldı: kurulum adımları, yapılandırma ve kullanım.
+- `ISSUES.md` oluşturuldu: bilinen sorunlar ve çözüm önerileri belgelendi.
+- `browser.wait_for_event` çöküşü düzeltildi; yerine sayfa döngüsü (loop) kullanıldı.
+- `--disable-blink-features=AutomationControlled` ve `navigator.webdriver` gizleme eklendi.
+
+## [v1.1.0] - 2026-03-10
+**Google Giriş Otomasyonu + 2FA Desteği**
+- Google Accounts sayfasına insan gibi yazarak otomatik giriş.
+- 2FA / SMS gelirse tarayıcı bekler, kullanıcı manuel tamamlar.
+- Ungoogled Chromium flag listesi tamamen entegre edildi.
 
 ## [v1.0.0] - 2026-03-10
-**İlk Yükleme (Initial Commit)**
-
-### Eklenenler:
-- Projenin temel iskeleti oluşturuldu.
-- Terminal / CLI menüsü olarak hizmet verecek olan `app.py` yazıldı. 
-- Tarayıcıyı Ungoogled Chromium ayarlarına (flags) göre başlatan `worker.py` eklendi.
-- Paralel tarayıcı işlemlerini yöneten `browser_manager.py` oluşturuldu.
-- Hesapların müsait/meşgul durumlarını yerel SQLite veritabanında tutan `account_manager.py` kodlandı.
-- Eklentinin anlık betik dosyalarını okuyabilmesi için FastAPI tabanlı `server.py` aktif edildi.
-- Twitter sekmelerine dinamik olarak betikleri enjekte edecek olan tarayıcı eklentisi (`extension/` klasörü) kodlandı.
-- `memory-bank` klasörü ve proje mimari durum dosyaları, ayrıca bağımlılıkları içeren `requirements.txt` ve `config.json` eklendi.
+**İlk Yükleme**
+- Temel proje iskeleti: CLI menüsü, çoklu hesap yönetimi, FastAPI betik sunucusu.
+- SQLite ile hesap/oturum veritabanı.
+- Chrome eklentisi: local API'dan betik çekip Twitter sayfalarına enjekte eder.

@@ -1,42 +1,63 @@
-# Twitter Otomasyon Merkezi (Terminal CLI)
+# Twitter Otomasyon - Ungoogled Chromium ile Oturum Yönetimi
 
-Bu proje, terminal üzerinden yönetilebilen, **Ungoogled Chromium** ve **Playwright** tabanlı tam otomatik bir Twitter bot ve betik enjeksiyon sistemidir. 
+Ungoogled Chromium üzerinde izole, kalıcı tarayıcı profilleriyle Google (ve ardından Twitter) hesabına otomatik giriş yapan Python tabanlı araç.
 
-Temel amacı, her biri izole edilmiş farklı tarayıcı profillerinde (farklı hesaplarla) paralel işlemler yürütebilmek ve özel olarak yazılmış tarayıcı eklentisi sayesinde bu oturumları sonlandırmadan dinamik olarak JavaScript betiklerini sayfalarda çalıştırabilmektir.
+## Özellikler
+- **Kalıcı Profil:** Her hesap için ayrı `profiles/` klasörü oluşturulur. Bir sonraki açılışta oturum devam eder.
+- **İnsan Gibi Yazma:** Giriş alanlarına karakterler arası gecikmeyle yazılır (bot tespitini azaltır).
+- **2FA / SMS Desteği:** Google ek doğrulama isterse tarayıcı ekranda durur; siz manuel tamamlarsınız.
+- **Ungoogled Chromium Flags:** Parmak izi maskeleme, referrer kaldırma, WebRTC sınırlama gibi tüm gizlilik parametreleri etkin.
+- **Eklenti Desteği:** `extension/` klasöründeki Chrome uzantısı otomatik yüklenir.
 
-## 🚀 Öne Çıkan Özellikler
+## Gereksinimler
+- Python 3.10+
+- [Ungoogled Chromium](https://github.com/ungoogled-software/ungoogled-chromium) (Portapps önerilir)
 
-- **Tam Otomatik Hesap Yönetimi:** SQLite veritabanı ile çoklu Twitter hesabının müsaitlik durumunu takip eder ve oturum başlatır.
-- **Ungoogled Chromium Desteği:** Özellikle gizlilik, hız ve parmak izi koruması (anti-fingerprinting) için Google servislerinden arındırılmış Chromium sürümünü kullanır. Uygulama özel Chromium flag'leri ile başlatılır.
-- **Dinamik Betik Enjeksiyonu:** Sistemle entegre çalışan yerel tarayıcı eklentisi (extension), arkaplanda çalışan FastAPI sunucusuna belirli aralıklarla ping atarak verilen yeni JS betiklerini anında algılar ve açık olan Twitter sekmelerine enjekte eder. Oturumları yeniden başlatmadan kodu güncelleyebilirsiniz.
-- **CLI (Terminal) Arayüzü:** Tüm bu işlemler sade, karmaşadan uzak ve menü tabanlı bir terminal arayüzünden (`app.py`) kontrol edilir.
-- **Memory-Bank:** Projenin son durumunu ve mimarisini takip etmeyi sağlayan bir bellek yapısına sahiptir.
+## Kurulum
 
-## ⚙️ Kurulum ve Kullanım
-
-### Gereksinimler
-- Python 3.10 veya üzeri
-- [Ungoogled Chromium](https://github.com/ungoogled-software/ungoogled-chromium) (.exe yolu yapılandırılmalıdır)
-
-### Adımlar
-
-1. Depoyu klonlayın:
 ```bash
-git clone https://github.com/KULLANICI_ADINIZ/twitter_back.git
+# 1. Depoyu klonlayın
+git clone https://github.com/beratyoruk/twitter_back.git
 cd twitter_back
-```
 
-2. Gerekli kütüphaneleri yükleyin ve Playwright'ı hazırlayın:
-```bash
+# 2. Playwright'i kurun
 pip install -r requirements.txt
-playwright install
+python -m playwright install
 ```
 
-3. `config.json` dosyasını açıp Ungoogled Chromium'un bilgisayarınızdaki yolunu (`chromium_path`) düzenleyin. 
+## Yapılandırma
+`config.json` dosyasını açıp `chromium_path` değerini kendi Ungoogled Chromium `chrome.exe` dosyanızın yolu ile güncelleyin:
 
-4. Uygulamayı başlatın:
+```json
+{
+    "chromium_path": "C:/portapps/ungoogled-chromium-portable/app/chrome.exe",
+    "extension_path": "extension"
+}
+```
+
+**Windows için Ungoogled Chromium nasıl kurulur?**
+1. [Portapps - Ungoogled Chromium](https://portapps.io/app/ungoogled-chromium-portable/) adresinden indirin.
+2. Kurulum sonrası oluşan `chrome.exe` dosyasının tam yolunu `config.json`'a yazın.
+
+## Kullanım
+
 ```bash
-python app.py
+python main.py
 ```
 
-Menü üzerinden hesap ekleyebilir, oturum başlatabilir ve dinamik olarak çalışacak yeni JavaScript kodunuzun yolunu terminalden belirterek anlık olarak güncelleyebilirsiniz.
+Program mail adresinizi ve şifrenizi soracak, ardından tarayıcıyı açacak ve giriş işlemini otomatik gerçekleştirecektir. Google ek doğrulama (2FA, SMS, telefon onayı) isterse tarayıcıda manuel olarak tamamlanabilir.
+
+## Bilinen Sorunlar
+
+Bkz. [ISSUES.md](./ISSUES.md)
+
+## Proje Yapısı
+```
+twitter_back/
+├── main.py          # Ana çalıştırıcı
+├── config.json      # Chromium ve eklenti yolu
+├── requirements.txt # Python bağımlılıkları
+├── extension/       # Tarayıcı eklentisi
+├── profiles/        # Hesap profilleri (git'e eklenmez)
+└── ISSUES.md        # Bilinen sorunlar ve çözümler
+```
