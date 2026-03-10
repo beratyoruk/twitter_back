@@ -151,72 +151,104 @@ def focus_browser_window(timeout=15):
         time.sleep(0.5)
     return False
 
-def auto_google_login(email, password):
-    import pyperclip
+def human_type(text, min_delay=0.06, max_delay=0.14):
+    """pynput ile karakter karakter, rastgele gecikmeli insan gibi yazar."""
+    import random
+    from pynput.keyboard import Controller as KB, Key
+    kb = KB()
+    for ch in text:
+        kb.type(ch)
+        time.sleep(random.uniform(min_delay, max_delay))
+
+def wait_for_page_load(keyword_list, timeout=20):
+    """Pencere başlığında belirtilen keyword'lerden biri görünene kadar bekler."""
     import pygetwindow as gw
-
-    print("  → Tarayıcı penceresi aranıyor...")
-    time.sleep(3)
-
-    # Pencereyi bul ve aktif et
-    found = False
-    deadline = time.time() + 15
-    target_win = None
+    deadline = time.time() + timeout
     while time.time() < deadline:
         for title in gw.getAllTitles():
             tl = title.lower()
-            if any(k in tl for k in ["chromium", "chrome", "google", "oturum", "sign", "accounts", "giriş"]):
-                try:
-                    wins = gw.getWindowsWithTitle(title)
-                    if wins:
-                        target_win = wins[0]
-                        target_win.activate()
-                        time.sleep(1.2)
-                        found = True
-                        break
-                except Exception:
-                    pass
-        if found:
-            break
+            if any(k in tl for k in keyword_list):
+                return title
         time.sleep(0.5)
+    return None
 
-    if not found:
+def activate_window_by_title(title):
+    import pygetwindow as gw
+    try:
+        wins = gw.getWindowsWithTitle(title)
+        if wins:
+            w = wins[0]
+            w.restore()
+            w.activate()
+            time.sleep(1)
+            return True
+    except Exception:
+        pass
+    return False
+
+def auto_google_login(email, password):
+    from pynput.keyboard import Controller as KB, Key
+    import random
+
+    # 1. Sayfanın yüklenmesini bekle (pencere başlığında google / sign kelimeler çıkana kadar)
+    print("  → Google giriş sayfası bekleniyor...")
+    title = wait_for_page_load(
+        ["chromium", "chrome", "google", "accounts", "sign", "oturum", "giriş"],
+        timeout=20
+    )
+    if not title:
         print("  ! Tarayıcı penceresi bulunamadı. Manuel giriş yapın.")
         return
 
-    # Ekranın ortasına tıkla — odağı kesinlikle tarayıcıya kilitler
-    sw, sh = pyautogui.size()
-    cx, cy = sw // 2, sh // 2
-    pyautogui.moveTo(cx, cy, duration=0.3)
-    pyautogui.click()
+    activate_window_by_title(title)
     time.sleep(1.5)
 
-    # Google login sayfasında email alanı otomatik focus'ta olur
-    # Ctrl+A ile temizle, yapıştır
-    print("  → E-posta giriliyor...")
-    pyperclip.copy(email)
-    pyautogui.hotkey('ctrl', 'a')
-    time.sleep(0.2)
-    pyautogui.hotkey('ctrl', 'v')
-    time.sleep(0.5)
-    pyautogui.press('enter')
-
-    print("  → Şifre bekleniyor...")
-    time.sleep(3.5)
-
-    # Şifre alanı yüklenince yine ortaya tıkla + yapıştır
-    pyautogui.moveTo(cx, cy, duration=0.3)
+    # 2. Email kutusunu bul ve tıkla (Google sayfasında sol-orta bölgede olur)
+    sw, sh = pyautogui.size()
+    # Google sign-in email input yaklaşık dikey %42 konumunda
+    ex, ey = sw // 2, int(sh * 0.42)
+    pyautogui.moveTo(ex, ey, duration=0.4)
     pyautogui.click()
     time.sleep(0.8)
-    pyperclip.copy(password)
+
+    # 3. Varsa eski içeriği temizle, karakteri karakter yaz
+    print("  → E-posta yazılıyor...")
     pyautogui.hotkey('ctrl', 'a')
     time.sleep(0.2)
-    pyautogui.hotkey('ctrl', 'v')
-    time.sleep(0.5)
-    pyautogui.press('enter')
+    human_type(email)
+    time.sleep(0.4)
 
-    print("  → Giriş gönderildi. 2FA varsa tarayıcıda tamamlayın.")
-    time.sleep(4)
+    kb = KB()
+    kb.press(Key.enter)
+    kb.release(Key.enter)
+
+    # 4. Şifre sayfasının yüklenmesini bekle
+    print("  → Şifre sayfası bekleniyor...")
+    time.sleep(2)
+    title2 = wait_for_page_load(
+        ["password", "şifre", "hosgeldiniz", "hoş geldiniz", "welcome", "enter your password"],
+        timeout=12
+    )
+    # Şifre sayfası başlıkta farklı görünebilir; güvenli tarafta kal
+    time.sleep(2.5)
+
+    # 5. Şifre kutusunu tıkla (yaklaşık %48 dikey)
+    py = int(sh * 0.48)
+    pyautogui.moveTo(sw // 2, py, duration=0.4)
+    pyautogui.click()
+    time.sleep(0.8)
+
+    print("  → Şifre yazılıyor...")
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    human_type(password)
+    time.sleep(0.4)
+
+    kb.press(Key.enter)
+    kb.release(Key.enter)
+
+    print("  → Giriş gönderildi. 2FA varsa tarayıcıda tamamlayın, sonra Enter'a basın.")
+    time.sleep(3)
 
 
 def menu_add_session():
