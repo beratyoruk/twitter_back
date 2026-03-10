@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import json
+import subprocess
 from playwright.sync_api import sync_playwright
 
 CONFIG_FILE = "config.json"
@@ -11,9 +12,6 @@ Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
 Object.defineProperty(navigator, 'languages', {get: () => ['tr-TR', 'tr', 'en-US', 'en']});
 Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
 window.chrome = {runtime: {}};
-Object.defineProperty(navigator, 'permissions', {
-    query: (p) => Promise.resolve({state: 'granted', onchange: null})
-});
 """
 
 def load_config():
@@ -23,76 +21,51 @@ def load_config():
 def apply_stealth(page):
     page.add_init_script(STEALTH_SCRIPT)
 
-def skip_optional_prompts(page):
-    skip_texts = ["Skip", "Not now", "Atla", "Şimdi değil", "Remind me later", "No thanks"]
-    for _ in range(6):
-        time.sleep(2)
-        skipped = False
-        for text in skip_texts:
-            try:
-                btn = page.locator(f"text={text}").first
-                if btn.is_visible(timeout=800):
-                    btn.click()
-                    skipped = True
-                    time.sleep(1.5)
-                    break
-            except Exception:
-                pass
-        if not skipped:
-            break
+def open_chrome_for_login(chrome_path, profile_dir, extension_path):
+    """
+    Ungoogled Chromium'u Playwright olmadan, doğrudan subprocess ile açar.
+    Google gerçek bir tarayıcı görür, bot tespiti yaşanmaz.
+    """
+    args = [
+        chrome_path,
+        f"--user-data-dir={profile_dir}",
+        f"--load-extension={extension_path}",
+        "--start-maximized",
+        "--no-default-browser-check",
+        "--disable-search-engine-collection",
+        "--disable-encryption",
+        "--disable-machine-id",
+        "https://accounts.google.com/signin",
+    ]
+    proc = subprocess.Popen(args)
+    return proc
 
-def open_twitter_tab(browser):
-    page = browser.new_page()
-    apply_stealth(page)
-    page.goto("https://twitter.com/")
-    return page
+def login_mode(email, profile_dir, config):
+    chrome_path = config.get("chromium_path", "")
+    extension_path = os.path.abspath(config.get("extension_path", "extension"))
 
-def login_mode(browser, email, password):
-    page = browser.pages[0] if browser.pages else browser.new_page()
-    apply_stealth(page)
-    page.goto("https://accounts.google.com/signin")
+    if not chrome_path or not os.path.exists(chrome_path):
+        print("HATA: config.json içinde chromium_path doğru ayarlanmamış.")
+        return
 
+    print(f"\n[{email}] Tarayıcı açılıyor (Google girişi için)...")
+    print("→ Google hesabına giriş yapın.")
+    print("→ Tüm adımları tamamladıktan sonra bu terminale dönüp Enter'a basın.")
+
+    proc = open_chrome_for_login(chrome_path, profile_dir, extension_path)
+    input("\n[Enter] Giriş tamamlandı, devam ediliyor...")
+
+    # Tarayıcıyı kapat (profil kaydedildi)
     try:
-        page.wait_for_selector('input[type="email"]', timeout=15000)
+        proc.terminate()
         time.sleep(1)
-        page.type('input[type="email"]', email, delay=130)
-        time.sleep(0.8)
-        page.keyboard.press("Enter")
+    except Exception:
+        pass
 
-        time.sleep(3)
-        page.wait_for_selector('input[type="password"]', timeout=15000)
-        time.sleep(1.2)
-        page.type('input[type="password"]', password, delay=160)
-        time.sleep(0.8)
-        page.keyboard.press("Enter")
-
-        print(f"[{email}] Giriş adımları tamamlandı.")
-        time.sleep(4)
-
-        # Hala accounts.google.com'daysa opsiyonel adımlar geliyor olabilir
-        # ya da 2FA - kullanıcı tarayıcıdan manuel tamamlayana kadar bekle
-        try:
-            page.wait_for_url(
-                lambda url: "accounts.google.com" not in url,
-                timeout=120000  # 2 dakika bekle
-            )
-        except Exception:
-            print(f"[{email}] Zaman aşımı — oturum zaten açık veya manuel işlem gerekiyor.")
-
-        skip_optional_prompts(page)
-
-        print(f"[{email}] Twitter açılıyor...")
-        open_twitter_tab(browser)
-        print(f"[{email}] Oturum aktif.")
-
-    except Exception as e:
-        print(f"[{email}] Hata: {e}")
-        try:
-            open_twitter_tab(browser)
-        except Exception:
-            pass
+    print(f"[{email}] Profil kaydedildi. Artık 'Oturumları Aç' ile açılabilir.")
 
 def resume_mode(browser, email):
+    """Kayıtlı profil çerezleriyle Twitter'ı doğrudan açar."""
     page = browser.pages[0] if browser.pages else browser.new_page()
     apply_stealth(page)
     print(f"[{email}] Mevcut oturum yükleniyor...")
@@ -104,15 +77,20 @@ def run():
         print("Kullanım: python worker.py <email> <password> <profile_dir> <mode>")
         sys.exit(1)
 
-    email = sys.argv[1]
+    email    = sys.argv[1]
     password = sys.argv[2]
     profile_dir = sys.argv[3]
-    mode = sys.argv[4]
+    mode     = sys.argv[4]
 
     config = load_config()
     chrome_path = config.get("chromium_path", "")
     extension_path = os.path.abspath(config.get("extension_path", "extension"))
 
+    if mode == "login":
+        login_mode(email, profile_dir, config)
+        return
+
+    # resume modu: Playwright ile aç
     args = [
         "--disable-beforeunload",
         "--disable-search-engine-collection",
@@ -148,11 +126,7 @@ def run():
             kwargs["executable_path"] = chrome_path
 
         browser = p.chromium.launch_persistent_context(**kwargs)
-
-        if mode == "login":
-            login_mode(browser, email, password)
-        else:
-            resume_mode(browser, email)
+        resume_mode(browser, email)
 
         try:
             while browser.pages:

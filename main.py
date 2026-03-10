@@ -2,8 +2,15 @@ import os
 import json
 import subprocess
 import sys
+import time
 
 SESSIONS_FILE = "sessions.json"
+CONFIG_FILE = "config.json"
+
+def load_config():
+    with open(CONFIG_FILE, "r") as f:
+        return json.load(f)
+
 
 def load_sessions():
     if not os.path.exists(SESSIONS_FILE):
@@ -36,9 +43,8 @@ def spawn_worker(email, password, profile_dir, mode="login"):
 
 def menu_add_session():
     email = input("Google Mail Adresi: ").strip()
-    password = input("Şifre: ").strip()
-    if not email or not password:
-        print("Mail ve şifre boş bırakılamaz.")
+    if not email:
+        print("Mail boş bırakılamaz.")
         return
     profile_dir = os.path.join(
         os.getcwd(), "profiles", email.replace("@", "_").replace(".", "_")
@@ -49,10 +55,46 @@ def menu_add_session():
         if s["email"] == email:
             print(f"Bu e-posta zaten kayıtlı: {email}")
             return
-    pid = spawn_worker(email, password, profile_dir, mode="login")
-    sessions.append({"email": email, "profile_dir": profile_dir, "pid": pid})
+
+    # Login modu: Ungoogled Chromium subprocess olarak açılır,
+    # kullanıcı manuel giriş yapar, Enter'a basınca profil kaydedilir.
+    config = load_config()
+    chrome_path = config.get("chromium_path", "")
+    extension_path = os.path.abspath(config.get("extension_path", "extension"))
+
+    if not chrome_path or not os.path.exists(chrome_path):
+        print("HATA: config.json içinde chromium_path doğru ayarlanmamış.")
+        return
+
+    print(f"\n[{email}] Tarayıcı açılıyor...")
+    print("→ Google hesabına giriş yapın.")
+    print("→ Tüm adımları tamamladıktan sonra bu terminale dönüp Enter'a basın.")
+
+    proc = subprocess.Popen([
+        chrome_path,
+        f"--user-data-dir={profile_dir}",
+        f"--load-extension={extension_path}",
+        "--start-maximized",
+        "--no-default-browser-check",
+        "--disable-search-engine-collection",
+        "--disable-encryption",
+        "--disable-machine-id",
+        "https://accounts.google.com/signin",
+    ])
+
+    input("\n[Enter] Giriş tamamlandı, devam ediliyor...")
+
+    try:
+        proc.terminate()
+        time.sleep(1)
+    except Exception:
+        pass
+
+    sessions.append({"email": email, "profile_dir": profile_dir, "pid": None})
     save_sessions(sessions)
-    print(f"Oturum başlatıldı → {email} (PID: {pid})")
+    print(f"[{email}] Profil kaydedildi. '4. Kayıtlı Oturumları Aç' ile açabilirsiniz.")
+
+
 
 def menu_list_sessions():
     sessions = load_sessions()
