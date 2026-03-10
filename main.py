@@ -258,6 +258,19 @@ def menu_add_session():
         return
 
     profile_dir = os.path.join(os.getcwd(), "profiles", email.replace("@", "_").replace(".", "_"))
+    
+    # DB'de yok ama klasörü kalmışsa, eski verilerle açmamak için temizle
+    if os.path.exists(profile_dir):
+        print("  → Eski profil klasörü temizleniyor...")
+        kill_all_chrome_for_profile(profile_dir)
+        for _ in range(15):
+            try:
+                shutil.rmtree(profile_dir)
+                if not os.path.exists(profile_dir):
+                    break
+            except Exception:
+                time.sleep(1)
+
     os.makedirs(profile_dir, exist_ok=True)
 
     print(f"\n→ Tarayıcı açılıyor: {email}")
@@ -298,18 +311,30 @@ def menu_delete():
         return
 
     # Tarayıcıyı kapat (tüm Chrome süreçleri — renderer, GPU, helper dahil)
+    print("  → Tarayıcı alt süreçleri kapatılıyor...")
     kill_all_chrome_for_profile(s["profile_dir"])
 
     # DB'den sil
     db_delete(sid)
 
     # Profil klasörünü sil
-    sil = input(f"Profil disk'ten de silinsin mi? ({s['email']}) [e/h]: ").lower()
+    sil = input(f"Profil disk'ten de silinsin mi? (Aynı maili eklerseniz sıfırdan girmeniz gerekir) ({s['email']}) [e/h]: ").lower()
     if sil == "e":
-        shutil.rmtree(s["profile_dir"], ignore_errors=True)
-        print("Profil silindi.")
+        print("  → Profil klasörü siliniyor (biraz sürebilir)...")
+        for _ in range(15):
+            try:
+                shutil.rmtree(s["profile_dir"])
+                if not os.path.exists(s["profile_dir"]):
+                    break
+            except Exception:
+                time.sleep(1)
+                
+        if os.path.exists(s["profile_dir"]):
+            print("  ! UYARI: Profil klasörü tam silinemedi. Görev Yöneticisinden Chrome'u kapatıp tekrar deneyebilirsiniz.")
+        else:
+            print("  ✓ Profil klasörü başarıyla silindi.")
 
-    print(f"✓ {s['email']} tamamen kaldırıldı.")
+    print(f"\n✓ {s['email']} veritabanından tamamen kaldırıldı.")
 
 def menu_open():
     sessions = db_all()
