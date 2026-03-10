@@ -3,14 +3,36 @@ import json
 import subprocess
 import sys
 import time
+import shutil
 
 SESSIONS_FILE = "sessions.json"
 CONFIG_FILE = "config.json"
 
+CHROME_FLAGS = [
+    "--disable-beforeunload",
+    "--disable-search-engine-collection",
+    "--fingerprinting-canvas-image-data-noise",
+    "--fingerprinting-canvas-measuretext-noise",
+    "--fingerprinting-client-rects-noise",
+    "--hide-crashed-bubble",
+    "--keep-old-history",
+    "--max-connections-per-host=15",
+    "--popups-to-tabs",
+    "--disable-encryption",
+    "--disable-machine-id",
+    "--disable-sharing-hub",
+    "--remove-tabsearch-button",
+    "--disable-top-sites",
+    "--no-default-browser-check",
+    "--no-pings",
+    "--webrtc-ip-handling-policy=default_public_interface_only",
+    "--enable-features=MinimalReferrers,NoCrossOriginReferrers,ReducedSystemInfo,RemoveClientHints,SpoofWebGLInfo",
+    "--start-maximized",
+]
+
 def load_config():
     with open(CONFIG_FILE, "r") as f:
         return json.load(f)
-
 
 def load_sessions():
     if not os.path.exists(SESSIONS_FILE):
@@ -23,6 +45,8 @@ def save_sessions(sessions):
         json.dump(sessions, f, indent=2, ensure_ascii=False)
 
 def is_pid_alive(pid):
+    if not pid:
+        return False
     try:
         result = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}"],
@@ -32,32 +56,16 @@ def is_pid_alive(pid):
     except Exception:
         return False
 
-def spawn_worker(email, password, profile_dir, mode="login"):
-    log = open("worker_log.txt", "a", encoding="utf-8")
-    proc = subprocess.Popen(
-        [sys.executable, "worker.py", email, password, profile_dir, mode],
-        stdout=log,
-        stderr=log
-    )
+def launch_browser(chrome_path, profile_dir, extension_path, url):
+    args = [
+        chrome_path,
+        f"--user-data-dir={profile_dir}",
+        f"--load-extension={extension_path}",
+    ] + CHROME_FLAGS + [url]
+    proc = subprocess.Popen(args)
     return proc.pid
 
 def menu_add_session():
-    email = input("Google Mail Adresi: ").strip()
-    if not email:
-        print("Mail boş bırakılamaz.")
-        return
-    profile_dir = os.path.join(
-        os.getcwd(), "profiles", email.replace("@", "_").replace(".", "_")
-    )
-    os.makedirs(profile_dir, exist_ok=True)
-    sessions = load_sessions()
-    for s in sessions:
-        if s["email"] == email:
-            print(f"Bu e-posta zaten kayıtlı: {email}")
-            return
-
-    # Login modu: Ungoogled Chromium subprocess olarak açılır,
-    # kullanıcı manuel giriş yapar, Enter'a basınca profil kaydedilir.
     config = load_config()
     chrome_path = config.get("chromium_path", "")
     extension_path = os.path.abspath(config.get("extension_path", "extension"))
@@ -66,35 +74,36 @@ def menu_add_session():
         print("HATA: config.json içinde chromium_path doğru ayarlanmamış.")
         return
 
-    print(f"\n[{email}] Tarayıcı açılıyor...")
+    email = input("Google Mail Adresi: ").strip()
+    if not email:
+        return
+
+    sessions = load_sessions()
+    if any(s["email"] == email for s in sessions):
+        print(f"Bu hesap zaten kayıtlı: {email}")
+        return
+
+    profile_dir = os.path.join(os.getcwd(), "profiles", email.replace("@", "_").replace(".", "_"))
+    os.makedirs(profile_dir, exist_ok=True)
+
+    print(f"\n→ Tarayıcı açılıyor: {email}")
     print("→ Google hesabına giriş yapın.")
-    print("→ Tüm adımları tamamladıktan sonra bu terminale dönüp Enter'a basın.")
+    print("→ Giriş tamamlandıktan sonra bu terminale geri dönüp Enter'a basın.\n")
 
-    proc = subprocess.Popen([
-        chrome_path,
-        f"--user-data-dir={profile_dir}",
-        f"--load-extension={extension_path}",
-        "--start-maximized",
-        "--no-default-browser-check",
-        "--disable-search-engine-collection",
-        "--disable-encryption",
-        "--disable-machine-id",
-        "https://accounts.google.com/signin",
-    ])
+    pid = launch_browser(chrome_path, profile_dir, extension_path, "https://accounts.google.com/signin")
+    input("[Enter] Giriş tamamlandı...")
 
-    input("\n[Enter] Giriş tamamlandı, devam ediliyor...")
-
+    # Tarayıcıyı kapat — profil kaydedildi
     try:
-        proc.terminate()
-        time.sleep(1)
+        subprocess.call(["taskkill", "/F", "/T", "/PID", str(pid)])
     except Exception:
         pass
+    time.sleep(1)
 
     sessions.append({"email": email, "profile_dir": profile_dir, "pid": None})
     save_sessions(sessions)
-    print(f"[{email}] Profil kaydedildi. '4. Kayıtlı Oturumları Aç' ile açabilirsiniz.")
-
-
+    print(f"\n✓ Oturum kaydedildi: {email}")
+    print("  '4. Kayıtlı Oturumları Aç' ile istediğiniz zaman açabilirsiniz.")
 
 def menu_list_sessions():
     sessions = load_sessions()
@@ -103,7 +112,7 @@ def menu_list_sessions():
         return
     print("\n--- Kayıtlı Oturumlar ---")
     for i, s in enumerate(sessions):
-        alive = is_pid_alive(s.get("pid", 0))
+        alive = is_pid_alive(s.get("pid"))
         durum = "🟢 Aktif" if alive else "🔴 Kapalı"
         print(f"  [{i+1}] {s['email']} — {durum}")
     print()
@@ -120,51 +129,70 @@ def menu_delete_session():
         return
     if idx < 0 or idx >= len(sessions):
         return
+
     s = sessions.pop(idx)
+    # Eğer çalışan bir işlem varsa onu öldür
+    if is_pid_alive(s.get("pid")):
+        subprocess.call(["taskkill", "/F", "/T", "/PID", str(s["pid"])])
+
     save_sessions(sessions)
+
     sil = input(f"Profil dosyaları da silinsin mi? ({s['email']}) [e/h]: ").lower()
     if sil == "e":
-        import shutil
         shutil.rmtree(s["profile_dir"], ignore_errors=True)
         print("Profil silindi.")
-    print(f"Oturum kaldırıldı: {s['email']}")
+
+    print(f"✓ Oturum kaldırıldı: {s['email']}")
 
 def menu_open_sessions():
     sessions = load_sessions()
     if not sessions:
         print("Açılacak kayıtlı oturum yok.")
         return
-    print("\n--- Mevcut Oturumlar ---")
+
+    config = load_config()
+    chrome_path = config.get("chromium_path", "")
+    extension_path = os.path.abspath(config.get("extension_path", "extension"))
+
+    if not chrome_path or not os.path.exists(chrome_path):
+        print("HATA: config.json içinde chromium_path doğru ayarlanmamış.")
+        return
+
+    print("\n--- Kayıtlı Oturumlar ---")
     for i, s in enumerate(sessions):
-        print(f"  [{i+1}] {s['email']}")
-    print("  [0] Tümünü aç")
+        alive = is_pid_alive(s.get("pid"))
+        durum = "🟢 Aktif" if alive else "🔴 Kapalı"
+        print(f"  [{i+1}] {s['email']} — {durum}")
+    print("  [0] Tümünü aç\n")
+
     try:
         sec = int(input("Seçim: "))
     except ValueError:
         return
 
     if sec == 0:
-        targets = sessions
+        targets = list(range(len(sessions)))
     elif 1 <= sec <= len(sessions):
-        targets = [sessions[sec - 1]]
+        targets = [sec - 1]
     else:
         print("Geçersiz seçim.")
         return
 
-    for s in targets:
-        if is_pid_alive(s.get("pid", 0)):
+    for idx in targets:
+        s = sessions[idx]
+        if is_pid_alive(s.get("pid")):
             print(f"Zaten açık: {s['email']}")
             continue
-        pid = spawn_worker(s["email"], "", s["profile_dir"], mode="resume")
-        s["pid"] = pid
-        print(f"Oturum açıldı → {s['email']} (PID: {pid})")
+        pid = launch_browser(chrome_path, s["profile_dir"], extension_path, "https://twitter.com/")
+        sessions[idx]["pid"] = pid
+        print(f"✓ Açıldı: {s['email']} (PID: {pid})")
 
     save_sessions(sessions)
 
 def main():
     while True:
         print("\n=== Twitter Otomasyon Merkezi ===")
-        print("1. Yeni Oturum Ekle")
+        print("1. Yeni Oturum Ekle (Google Girişi)")
         print("2. Oturumları Listele")
         print("3. Oturum Sil")
         print("4. Kayıtlı Oturumları Aç")
@@ -182,12 +210,12 @@ def main():
         elif choice == "4":
             menu_open_sessions()
         elif choice == "0":
-            print("Çıkış yapılıyor...")
+            print("Çıkış.")
             break
         else:
             print("Geçersiz seçim.")
 
-        input("\nDevam etmek için Enter'a basın...")
+        input("\n[Enter] Ana menüye dön...")
 
 if __name__ == "__main__":
     main()
