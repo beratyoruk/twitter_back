@@ -3,7 +3,7 @@ import sys
 import time
 import json
 from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync
+from playwright_stealth import stealth
 
 CONFIG_FILE = "config.json"
 
@@ -37,7 +37,7 @@ def open_twitter_tab(browser):
 
 def login_mode(browser, email, password):
     page = browser.pages[0] if browser.pages else browser.new_page()
-    stealth_sync(page)
+    stealth(page)
     page.goto("https://accounts.google.com/signin")
 
     try:
@@ -58,7 +58,7 @@ def login_mode(browser, email, password):
         # Google'dan çıkıldıktan sonra Twitter'ı aynı pencerede yeni sekmede aç
         print(f"[{email}] Twitter açılıyor...")
         twitter_page = open_twitter_tab(browser)
-        stealth_sync(twitter_page)
+        stealth(twitter_page)
         print(f"[{email}] Oturum aktif.")
     except Exception as e:
         print(f"[{email}] Giriş sırasında hata: {e}")
@@ -70,7 +70,7 @@ def login_mode(browser, email, password):
 def resume_mode(browser, email):
     """Kayıtlı profil çerezleriyle Twitter'ı doğrudan açar, yeniden giriş yapmaz."""
     page = browser.pages[0] if browser.pages else browser.new_page()
-    stealth_sync(page)
+    stealth(page)
     print(f"[{email}] Mevcut oturum yükleniyor...")
     page.goto("https://twitter.com/")
     print(f"[{email}] Oturum aktif.")
