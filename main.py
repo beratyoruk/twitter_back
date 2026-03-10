@@ -119,14 +119,20 @@ def find_chrome_pid(profile_dir):
     except Exception:
         return None
 
-def kill_pid(pid):
-    if not pid:
-        return
+def kill_all_chrome_for_profile(profile_dir):
+    """
+    profile_dir'e ait tüm Chrome alt süreçlerini sonlandırır.
+    Tek PID yerine, komut satırında profile_dir geçen tüm chrome.exe'leri öldürür.
+    """
+    base = os.path.basename(profile_dir).replace("'", "''")
+    cmd = (
+        f"Get-WmiObject Win32_Process | "
+        f"Where-Object {{$_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*{base}*'}} | "
+        f"ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+    )
     try:
-        subprocess.run(
-            ["powershell", "-Command", f"Stop-Process -Id {pid} -Force -ErrorAction SilentlyContinue"],
-            capture_output=True, timeout=5
-        )
+        subprocess.run(["powershell", "-Command", cmd], capture_output=True, timeout=10)
+        time.sleep(1)
     except Exception:
         pass
 
@@ -259,7 +265,7 @@ def menu_add_session():
     auto_google_login(email, password)
 
     input("\n[Enter] Giriş tamamlandı, devam et...")
-    kill_pid(pid)
+    kill_all_chrome_for_profile(profile_dir)
 
     db_add(email, profile_dir)
     print(f"✓ Oturum kaydedildi: {email}")
@@ -291,9 +297,8 @@ def menu_delete():
         print("Geçersiz ID.")
         return
 
-    # Tarayıcıyı kapat
-    kill_pid(s.get("pid"))
-    time.sleep(1)
+    # Tarayıcıyı kapat (tüm Chrome süreçleri — renderer, GPU, helper dahil)
+    kill_all_chrome_for_profile(s["profile_dir"])
 
     # DB'den sil
     db_delete(sid)
