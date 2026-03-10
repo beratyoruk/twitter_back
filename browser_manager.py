@@ -7,10 +7,11 @@ def start_session(account_id, username, password):
     profile_dir = os.path.join(os.getcwd(), "profiles", f"profile_{username}")
     os.makedirs(profile_dir, exist_ok=True)
     
+    log_file = open("worker_log.txt", "a")
     process = subprocess.Popen(
         ["python", WORKER_SCRIPT, str(account_id), username, password, profile_dir],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        stdout=log_file,
+        stderr=log_file
     )
     return process.pid
 
