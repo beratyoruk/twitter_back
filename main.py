@@ -65,39 +65,53 @@ def launch_browser(chrome_path, profile_dir, extension_path, urls):
     proc = subprocess.Popen(args)
     return proc.pid
 
-def autotype(text, interval=0.07):
-    """OS seviyesinde karakter karakter yazar — Google CDP görmez."""
-    pyautogui.PAUSE = 0
-    for ch in text:
-        pyautogui.typewrite(ch if ch.isascii() else '', interval=0)
-        if not ch.isascii():
-            pyautogui.hotkey('ctrl', 'a') # fallback: patlamayı önle
-            import subprocess as _sp
-            _sp.run(['clip'], input=ch.encode('utf-16'), check=False)
-            pyautogui.hotkey('ctrl', 'v')
-        time.sleep(interval)
+def focus_browser_window(timeout=12):
+    """Chromium/Chrome penceresini bulur ve odağa alır."""
+    import pygetwindow as gw
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for title in gw.getAllTitles():
+            if any(k in title.lower() for k in ["chromium", "chrome", "google", "sign in", "accounts"]):
+                try:
+                    win = gw.getWindowsWithTitle(title)[0]
+                    win.activate()
+                    time.sleep(0.8)
+                    return True
+                except Exception:
+                    pass
+        time.sleep(0.5)
+    return False
 
 def auto_google_login(email, password):
     """
-    Tarayıcı odaklanmış / ön planda olduğu sürece pyautogui ile
-    OS seviyesinde e-posta ve şifreyi yazar. Google CDP görmez.
+    OS seviyesinde klavye simülasyonu ile Google girişi yapar.
+    pyautogui CDP kullanmaz — Google bot tespiti yapamaz.
     """
+    print("  → Tarayıcı penceresi bekleniyor...")
+    if not focus_browser_window(timeout=15):
+        print("  ! Tarayıcı penceresi bulunamadı, manuel giriş yapın.")
+        return
+
     print("  → E-posta giriliyor...")
-    time.sleep(4.5)                  # Sayfa yüklensin
-    pyautogui.click()                # Sayfa odağı al
-    time.sleep(0.5)
-    pyautogui.typewrite(email, interval=0.08)
-    time.sleep(0.3)
+    time.sleep(2)
+    pyautogui.hotkey('ctrl', 'a')
+    import pyperclip
+    pyperclip.copy(email)
+    pyautogui.hotkey('ctrl', 'v')
+    time.sleep(0.4)
     pyautogui.press('enter')
 
-    print("  → Şifre giriliyor...")
-    time.sleep(3.5)                  # Şifre alanı yüklensin
-    pyautogui.typewrite(password, interval=0.09)
-    time.sleep(0.3)
+    print("  → Şifre bekleniyor...")
+    time.sleep(3.5)
+    pyperclip.copy(password)
+    pyautogui.hotkey('ctrl', 'v')
+    time.sleep(0.4)
     pyautogui.press('enter')
 
-    print("  → Giriş gönderildi. 2FA varsa tarayıcıdan tamamlayın.")
-    time.sleep(5)
+    print("  → Giriş gönderildi. 2FA varsa tarayıcıda tamamlayın.")
+    time.sleep(4)
+
+
 
 def menu_add_session():
     config = load_config()
