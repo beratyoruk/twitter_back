@@ -45,15 +45,15 @@ def save_sessions(sessions):
     with open(SESSIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(sessions, f, indent=2, ensure_ascii=False)
 
-def is_pid_alive(pid):
-    if not pid:
-        return False
+def is_profile_running(profile_dir):
+    """Verilen profil diziniyle çalışan bir Chrome/Chromium süreci var mı?"""
     try:
         result = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}"],
-            capture_output=True, text=True
+            ['wmic', 'process', 'where', 'name="chrome.exe"', 'get', 'commandline'],
+            capture_output=True, text=True, timeout=5
         )
-        return str(pid) in result.stdout
+        normalized = profile_dir.replace("/", "\\").lower()
+        return normalized in result.stdout.lower()
     except Exception:
         return False
 
@@ -162,7 +162,7 @@ def menu_list_sessions():
         return
     print("\n--- Kayıtlı Oturumlar ---")
     for i, s in enumerate(sessions):
-        alive = is_pid_alive(s.get("pid"))
+        alive = is_profile_running(s["profile_dir"])
         durum = "🟢 Aktif" if alive else "🔴 Kapalı"
         print(f"  [{i+1}] {s['email']} — {durum}")
     print()
@@ -181,8 +181,8 @@ def menu_delete_session():
         return
 
     s = sessions.pop(idx)
-    if is_pid_alive(s.get("pid")):
-        subprocess.call(["taskkill", "/F", "/T", "/PID", str(s["pid"])])
+    if is_profile_running(s["profile_dir"]):
+        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe", "/T"], capture_output=True)
 
     save_sessions(sessions)
     sil = input(f"Profil dosyaları da silinsin mi? ({s['email']}) [e/h]: ").lower()
@@ -207,7 +207,7 @@ def menu_open_sessions():
 
     print("\n--- Kayıtlı Oturumlar ---")
     for i, s in enumerate(sessions):
-        alive = is_pid_alive(s.get("pid"))
+        alive = is_profile_running(s["profile_dir"])
         durum = "🟢 Aktif" if alive else "🔴 Kapalı"
         print(f"  [{i+1}] {s['email']} — {durum}")
     print("  [0] Tümünü aç\n")
@@ -227,7 +227,7 @@ def menu_open_sessions():
 
     for idx in targets:
         s = sessions[idx]
-        if is_pid_alive(s.get("pid")):
+        if is_profile_running(s["profile_dir"]):
             print(f"Zaten açık: {s['email']}")
             continue
         # Profil çerezleri var → Google sekmesi + Twitter sekmesi aynı anda aç
