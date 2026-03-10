@@ -1,65 +1,59 @@
-# Twitter Otomasyon - Ungoogled Chromium ile Çoklu Oturum Yönetimi
+# Twitter Otomasyon - Çoklu Oturum Yöneticisi (v2.0.0)
 
-Ungoogled Chromium üzerinde izole, kalıcı tarayıcı profilleriyle birden fazla Google/Twitter hesabını aynı anda yöneten Python aracı.
+Bu proje, **Ungoogled Chromium** kullanarak birden fazla Google ve Twitter hesabını kalıcı profillerle, bot tespitine takılmadan (Playwright veya Selenium CDP kullanmadan) yönetmenizi sağlayan bir terminal uygulamasıdır.
 
-## Özellikler
-- **Çoklu Oturum:** Her hesap ayrı bir Chromium penceresinde, ayrı profille açılır.
-- **Kalıcı Profil:** `profiles/` klasöründe kayıtlı oturumlar; yeniden açıldığında Google/Twitter girişi tekrar yapılmaz.
-- **Human-like Yazma:** Bot tespitini azaltmak için karakterler arasında gecikme.
-- **`playwright-stealth`:** Google'ın otomasyon sinyallerini otomatik maskeler.
-- **Google Opsiyonel Adım Atlama:** Ev adresi, telefon, gizlilik ekranları otomatik atlanır.
-- **Ungoogled Chromium Flags:** Parmak izi maskeleme, referrer kaldırma, WebRTC kısıtlama dahil tüm gizlilik parametreleri.
+## 🚀 Öne Çıkan Özellikler
 
-## Gereksinimler
-- Python 3.10+
-- [Ungoogled Chromium / Portapps](https://portapps.io/app/ungoogled-chromium-portable/)
+- **Sıfır Bot Tespiti:** Google giriş otomasyonu, tarayıcı arka kapı protokolleri (CDP) üzerinden yapılmaz. Tarayıcı ön plana alınarak işletim sistemi düzeyinde fiziksel klavye/fare simülasyonu (`pynput`, `pyautogui`) ile gerçek bir insan gibi giriş yapılır.
+- **Kalıcı (Persistent) Çerezler:** Oturumu kapattığınızda veya durdurduğunuzda, arka planda tarayıcı nazikçe (`graceful shutdown`) kapatılır. Böylece Google ve Twitter çerezleriniz (`cookies`) diske şifrelenmiş halde başarıyla yazılır. Bir sonraki açılışta tekrar şifre girmenize gerek kalmaz.
+- **Çoklu Sekme (Multi-tab) Başlatma:** Kayıtlı bir oturumu açtığınızda hem `My Account (Google)` hem de `Twitter` sekmeleri eşzamanlı olarak açılır.
+- **Güvenli Veritabanı:** Oturum durumlarınız (Açık/Kapalı), süreç ID'leri (PID) `SQLite` veritabanında (`sessions.db`) güvenle tutulur.
+- **Arka Plan Monitörü:** Arka planda çalışan bir thread sayesinde, elinizle tarayıcıyı kapattığınızda bile program 10 saniye içinde bunu fark edip veritabanındaki durumu "🔴 Kapalı" olarak günceller.
+- **Temiz Profil Yönetimi:** Oturumu sildiğinizde hedefe ait tüm alt süreçler (Chrome Renderer, GPU, Extension Helper) temizlenir ve diskteki profil klasörü güvenli bir döngü ile tamamen kazınır.
 
-## Kurulum
+## 🛠 Mimari (v2.0.0)
 
-```bash
-git clone https://github.com/beratyoruk/twitter_back.git
-cd twitter_back
-pip install -r requirements.txt
-python -m playwright install
-```
+Eski `Playwright` bağımlılıkları tamamen kaldırılmış, süreç (`subprocess`) mimarisi doğrudan Chromium executable'ı üzerinden yapılandırılmıştır. 
+Tüm veriler cihazınızda `profiles/` klasörü altında izole olarak tutulur.
 
-## Yapılandırma
-`config.json` içindeki `chromium_path` değerini Ungoogled Chromium `chrome.exe` yoluyla güncelleyin:
+## 📋 Gereksinimler
 
-```json
-{
-    "chromium_path": "C:/portapps/ungoogled-chromium-portable/app/chrome.exe",
-    "extension_path": "extension"
-}
-```
+- Python 3.10 veya üzeri
+- Windows İşletim Sistemi
+- [Ungoogled Chromium (Portapps)](https://portapps.io/app/ungoogled-chromium-portable/) yüklü olmalıdır.
 
-## Kullanım
+## ⚙️ Kurulum
+
+1. Repoyu klonlayın:
+   ```bash
+   git clone https://github.com/beratyoruk/twitter_back.git
+   cd twitter_back
+   ```
+
+2. Gereksinimleri yükleyin:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. `config.json` dosyanızı oluşturun ve Chromium yolunuzu ayarlayın:
+   ```json
+   {
+       "chromium_path": "C:/portapps/ungoogled-chromium-portable/app/chrome.exe",
+       "extension_path": "extension"
+   }
+   ```
+
+## 🎮 Kullanım
+
+Terminale aşağıdaki komutu yazarak menüye erişebilirsiniz:
 
 ```bash
 python main.py
 ```
 
-| Seçenek | Açıklama |
-|---------|----------|
-| **1** | Yeni oturum ekle — mail/şifre gir, Google'a giriş yap, Twitter aç |
-| **2** | Aktif/kayıtlı oturumları listele |
-| **3** | Oturum sil (profil dahil opsiyonel) |
-| **4** | Kayıtlı oturumları yeniden aç (çerezlerle, giriş gerekmez) |
-
-## Proje Yapısı
-
-```
-twitter_back/
-├── main.py          # CLI menüsü
-├── worker.py        # Playwright tarayıcı süreç yönetimi
-├── config.json      # Chromium ve eklenti yolu
-├── requirements.txt
-├── extension/       # Tarayıcı eklentisi
-├── profiles/        # Hesap profilleri (git'e eklenmez)
-├── sessions.json    # Oturum kayıtları (git'e eklenmez)
-├── ISSUES.md        # Bilinen sorunlar
-└── PUSH_LOG.md      # Versiyon geçmişi
-```
-
-## Bilinen Sorunlar
-Bkz. [ISSUES.md](./ISSUES.md)
+### Menü Seçenekleri:
+1. **Yeni Oturum Ekle:** E-posta ve şifrenizi terminale girersiniz. Tarayıcı açılır, otomatik olarak insan gibi giriş yapar ve profilinizi kaydeder.
+2. **Oturumları Listele:** Kayıtlı tüm hesaplarınızı ve o anki durumlarını (🟢 Aktif / 🔴 Kapalı) listeler.
+3. **Açık Oturumu Durdur / Kapat:** Aktif olan bir tarayıcıyı, profili bozmadan nazikçe kapatır. Verileriniz korunur.
+4. **Oturum Sil:** Bir hesabı; tarayıcı alt süreçlerinden, SQLite veritabanından ve diskteki profil klasöründen kalıcı olarak siler.
+5. **Kayıtlı Oturumları Aç:** Önceden giriş yapılmış ve kapatılmış bir oturumu **şifre girmeden**, direkt Twitter'da olacak şekilde tekrar açmanızı sağlar. Aynı anda 0'a basarak kaydedilmiş tüm oturumlarınızı eşzamanlı başlatabilirsiniz.
