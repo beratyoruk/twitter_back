@@ -2,6 +2,7 @@ import os
 import time
 import json
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
 def load_config():
     with open("config.json", "r") as f:
@@ -38,7 +39,6 @@ def run():
         "--no-pings",
         "--webrtc-ip-handling-policy=default_public_interface_only",
         "--enable-features=MinimalReferrers,NoCrossOriginReferrers,ReducedSystemInfo,RemoveClientHints,SpoofWebGLInfo",
-        # Otomasyon tespitini azaltmak için
         "--disable-blink-features=AutomationControlled",
         f"--disable-extensions-except={extension_path}",
         f"--load-extension={extension_path}",
@@ -57,8 +57,8 @@ def run():
         browser = p.chromium.launch_persistent_context(**kwargs)
         page = browser.pages[0] if browser.pages else browser.new_page()
 
-        # navigator.webdriver özelliğini gizle (Google bot tespitini zorlaştırır)
-        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        # playwright-stealth: bot tespitini otomatik engeller
+        stealth_sync(page)
 
         page.goto("https://accounts.google.com/signin")
 
@@ -74,7 +74,6 @@ def run():
             page.keyboard.press("Enter")
 
             print("Giriş yapıldı. Gerekirse tarayıcıda 2FA/SMS adımını tamamlayın...")
-            # Google onay/doğrulama ekranlarını geçene kadar bekle (süresiz)
             page.wait_for_url(lambda url: "accounts.google.com" not in url, timeout=0)
 
             print("Giriş tamamlandı. Twitter'a yönlendiriliyor...")
@@ -86,8 +85,7 @@ def run():
             except Exception:
                 pass
 
-        print("Oturum aktif. Bu terminal penceresini açık tutun. Tarayıcıyı kapattığınızda oturum sonlanır.")
-        # Tarayıcı kapanana kadar bekle
+        print("Oturum aktif. Bu terminal penceresini açık tutun.")
         try:
             while browser.pages:
                 time.sleep(2)

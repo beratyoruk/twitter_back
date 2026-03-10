@@ -3,19 +3,19 @@
 ## #1 — Google: "Bu tarayıcı veya uygulama güvenli görünmüyor"
 
 ### Açıklama
-Playwright ile kontrol edilen tarayıcılarda `navigator.webdriver` özelliği varsayılan olarak `true` döner. Google bu değeri tespit edip otomasyonla açılmış tarayıcıları güvensiz sayarak girişi bloklar.
+Playwright ile kontrol edilen Chromium tarayıcısında `navigator.webdriver` özelliği `true` döner. Google bu sinyali algılayarak otomasyonla açılmış tarayıcılara güvensiz uyarısı gösterir ve girişi bloklar.
 
-### Geçici Çözüm (Uygulandı)
-`--disable-blink-features=AutomationControlled` Chromium flag'i ve aşağıdaki `init_script` eklendi:
-```js
-Object.defineProperty(navigator, 'webdriver', {get: () => undefined})
+### Durum: ✅ Çözüldü
+
+`playwright-stealth` kütüphanesi entegre edildi. `stealth_sync(page)` çağrısı, Google'ın kullandığı tüm otomasyon sinyallerini (webdriver flag, navigator property'leri, Chrome runtime objeleri vb.) otomatik maskeler. Manuel müdahale gerektirmez.
+
+### Uygulanan Çözüm
+```python
+from playwright_stealth import stealth_sync
+stealth_sync(page)  # browser.new_page() sonrası çağrılır
 ```
-Bu, temel bot tespitini büyük ölçüde azaltır. Ancak bazı Google hesaplarında hâlâ tetiklenebilir.
 
-### Kalıcı Çözüm Önerileri
-1. **Manuel Profil Hazırlama:** Ungoogled Chromium'u normalde açıp Google'a manuel giriş yapıp kapatın. Oluşan profil `profiles/` klasörüne kopyalanırsa sonraki script çalışmalarında hesap zaten giriş yapmış olacak, Google giriş ekranını görmeyecek.
-2. **App Password Kullanımı:** Google hesabında 2 Adımlı Doğrulama açıksa Gmail Uygulama Şifresi (`myaccount.google.com/apppasswords`) oluşturup normal şifre yerine onu kullanın.
-3. **Playwright-Stealth:** `playwright-stealth` veya `undetected-playwright` kütüphaneleri daha gelişmiş bot maskeleme sağlar (araştırma aşamasında).
-
-### Durum
-- [ ] Araştırılıyor
+### Gereksinim
+```
+playwright-stealth==2.0.2
+```

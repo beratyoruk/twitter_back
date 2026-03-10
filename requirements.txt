@@ -1,1 +1,2 @@
 playwright==1.42.0
+playwright-stealth==2.0.2
