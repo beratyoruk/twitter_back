@@ -7,7 +7,6 @@ setInterval(async () => {
     
     const scriptContent = await response.text();
     
-    // Boyut/içerik değişikliği tespiti (ve "hazır degil" durumunu pas geçme)
     if (scriptContent.length > 5 && scriptContent !== lastScriptHash && !scriptContent.includes("Betik hazir degil")) {
       lastScriptHash = scriptContent;
       console.log("Yeni betik algilandi, Twitter sayfalarina enjekte ediliyor...");
@@ -17,15 +16,10 @@ setInterval(async () => {
           chrome.scripting.executeScript({
             target: {tabId: tab.id},
             func: (code) => {
-              try { 
-                  console.log("Dinamik betik calistiriliyor...");
-                  eval(code); 
-              } catch(e){ 
-                  console.error("Dinamik betik hatasi:", e); 
-              }
+              try { eval(code); } catch(e){ console.error(e); }
             },
             args: [scriptContent]
-          }).catch(err => console.log("Script inject error:", err));
+          }).catch(err => console.log(err));
         });
       });
       
@@ -37,11 +31,9 @@ setInterval(async () => {
               try { eval(code); } catch(e){ console.error(e); }
             },
             args: [scriptContent]
-          }).catch(err => console.log("Script inject error x.com:", err));
+          }).catch(err => console.log(err));
         });
       });
     }
-  } catch (err) {
-    // console.error("Script fetch error:", err);
-  }
-}, 3000); // Her 3 saniyede bir api'den yeni betik check eder.
+  } catch (err) {}
+}, 3000);

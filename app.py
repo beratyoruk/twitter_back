@@ -1,6 +1,8 @@
 import sys
 import json
 import time
+import os
+import subprocess
 
 from account_manager import (
     get_available_account,
@@ -11,16 +13,14 @@ from account_manager import (
     register_session
 )
 from browser_manager import start_session, stop_session
-import subprocess
 
 def clear_screen():
-    # Windows'ta cls, Unix'te clear
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def main():
-    print("Dinamik betik sunucusu (API) başlatılıyor...")
+    print("Dinamik betik sunucusu başlatılıyor...")
     api_server = subprocess.Popen([sys.executable, "server.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1) # Sunucunun kalkmasını bekle
+    time.sleep(1)
 
     try:
         while True:
@@ -28,7 +28,7 @@ def main():
             print("=== Twitter Otomasyon Merkezi ===")
             print("1. Yeni Oturum Aç ve Eklentiyi Çalıştır")
             print("2. Seçili Oturumu Kapat ve Hesabı Boşa Çıkar")
-            print("3. Çalışan Betiği Güncelle ve Çalıştır (Dinamik)")
+            print("3. Çalışan Betiği Güncelle ve Çalıştır")
             print("4. Hesap Ekle")
             print("5. Tüm Hesapları Görüntüle")
             print("0. Çıkış")
@@ -73,7 +73,7 @@ def main():
                         acc_id = selected_session[3]
                         stop_session(pid)
                         release_account(acc_id)
-                        print(f"Oturum ve süreç (PID:{pid}) kapatıldı. Hesap '{selected_session[1]}' boşa çıkarıldı.")
+                        print(f"Oturum ({pid}) kapatıldı. Hesap '{selected_session[1]}' boşa çıkarıldı.")
                     else:
                         print("Geçersiz Session ID.")
                 except ValueError:
@@ -90,7 +90,7 @@ def main():
                         
                     with open('current_script.js', 'w', encoding='utf-8') as target:
                         target.write(script_content)
-                    print("Betik başarıyla güncellendi! Eklenti aktif oturumlarda bu yeni betiği okuyup çalıştıracaktır.")
+                    print("Betik başarıyla güncellendi!")
                 except FileNotFoundError:
                     print("Belirtilen dosya bulunamadı.")
                 except Exception as e:

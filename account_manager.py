@@ -1,5 +1,4 @@
 import sqlite3
-import os
 
 DB_PATH = 'db.sqlite3'
 
@@ -11,7 +10,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            status TEXT DEFAULT 'available' -- 'available', 'in_use'
+            status TEXT DEFAULT 'available'
         )
     ''')
     cursor.execute('''
@@ -83,5 +82,4 @@ def get_all_accounts():
     conn.close()
     return accounts
 
-# Initialize when imported
 init_db()
