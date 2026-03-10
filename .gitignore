@@ -5,6 +5,7 @@ venv/
 db.sqlite3
 profiles/
 logs/
+sessions.json
 ungoogled_installer.exe
 ungoogled_chromium/
 memory-bank/

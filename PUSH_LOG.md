@@ -1,5 +1,14 @@
 # Push Log
 
+## [v1.3.0] - 2026-03-11
+**Çoklu Oturum Yönetimi**
+- `main.py` 4 seçenekli interaktif CLI menüsüne dönüştürüldü.
+- `worker.py` login/resume modlarını destekler hale getirildi.
+- `sessions.json` ile kalıcı oturum kaydı eklendi.
+- Google opsiyonel adımları (ev adresi, telefon, gizlilik) otomatik atlanıyor.
+- Oturum resume'da profil çerezleri kullanılır, yeniden giriş yapılmaz.
+- `v1.3-multi-session` branch'i oluşturuldu.
+
 ## [v1.2.0] - 2026-03-11
 **Proje Sadeleştirme + Kullanıcı Kurulum Rehberi**
 - Proje tek bir işe (`main.py`) indirgendi; tüm gereksiz dosyalar silindi.

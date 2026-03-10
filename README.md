@@ -1,32 +1,30 @@
-# Twitter Otomasyon - Ungoogled Chromium ile Oturum Yönetimi
+# Twitter Otomasyon - Ungoogled Chromium ile Çoklu Oturum Yönetimi
 
-Ungoogled Chromium üzerinde izole, kalıcı tarayıcı profilleriyle Google (ve ardından Twitter) hesabına otomatik giriş yapan Python tabanlı araç.
+Ungoogled Chromium üzerinde izole, kalıcı tarayıcı profilleriyle birden fazla Google/Twitter hesabını aynı anda yöneten Python aracı.
 
 ## Özellikler
-- **Kalıcı Profil:** Her hesap için ayrı `profiles/` klasörü oluşturulur. Bir sonraki açılışta oturum devam eder.
-- **İnsan Gibi Yazma:** Giriş alanlarına karakterler arası gecikmeyle yazılır (bot tespitini azaltır).
-- **2FA / SMS Desteği:** Google ek doğrulama isterse tarayıcı ekranda durur; siz manuel tamamlarsınız.
-- **Ungoogled Chromium Flags:** Parmak izi maskeleme, referrer kaldırma, WebRTC sınırlama gibi tüm gizlilik parametreleri etkin.
-- **Eklenti Desteği:** `extension/` klasöründeki Chrome uzantısı otomatik yüklenir.
+- **Çoklu Oturum:** Her hesap ayrı bir Chromium penceresinde, ayrı profille açılır.
+- **Kalıcı Profil:** `profiles/` klasöründe kayıtlı oturumlar; yeniden açıldığında Google/Twitter girişi tekrar yapılmaz.
+- **Human-like Yazma:** Bot tespitini azaltmak için karakterler arasında gecikme.
+- **`playwright-stealth`:** Google'ın otomasyon sinyallerini otomatik maskeler.
+- **Google Opsiyonel Adım Atlama:** Ev adresi, telefon, gizlilik ekranları otomatik atlanır.
+- **Ungoogled Chromium Flags:** Parmak izi maskeleme, referrer kaldırma, WebRTC kısıtlama dahil tüm gizlilik parametreleri.
 
 ## Gereksinimler
 - Python 3.10+
-- [Ungoogled Chromium](https://github.com/ungoogled-software/ungoogled-chromium) (Portapps önerilir)
+- [Ungoogled Chromium / Portapps](https://portapps.io/app/ungoogled-chromium-portable/)
 
 ## Kurulum
 
 ```bash
-# 1. Depoyu klonlayın
 git clone https://github.com/beratyoruk/twitter_back.git
 cd twitter_back
-
-# 2. Playwright'i kurun
 pip install -r requirements.txt
 python -m playwright install
 ```
 
 ## Yapılandırma
-`config.json` dosyasını açıp `chromium_path` değerini kendi Ungoogled Chromium `chrome.exe` dosyanızın yolu ile güncelleyin:
+`config.json` içindeki `chromium_path` değerini Ungoogled Chromium `chrome.exe` yoluyla güncelleyin:
 
 ```json
 {
@@ -35,29 +33,33 @@ python -m playwright install
 }
 ```
 
-**Windows için Ungoogled Chromium nasıl kurulur?**
-1. [Portapps - Ungoogled Chromium](https://portapps.io/app/ungoogled-chromium-portable/) adresinden indirin.
-2. Kurulum sonrası oluşan `chrome.exe` dosyasının tam yolunu `config.json`'a yazın.
-
 ## Kullanım
 
 ```bash
 python main.py
 ```
 
-Program mail adresinizi ve şifrenizi soracak, ardından tarayıcıyı açacak ve giriş işlemini otomatik gerçekleştirecektir. Google ek doğrulama (2FA, SMS, telefon onayı) isterse tarayıcıda manuel olarak tamamlanabilir.
-
-## Bilinen Sorunlar
-
-Bkz. [ISSUES.md](./ISSUES.md)
+| Seçenek | Açıklama |
+|---------|----------|
+| **1** | Yeni oturum ekle — mail/şifre gir, Google'a giriş yap, Twitter aç |
+| **2** | Aktif/kayıtlı oturumları listele |
+| **3** | Oturum sil (profil dahil opsiyonel) |
+| **4** | Kayıtlı oturumları yeniden aç (çerezlerle, giriş gerekmez) |
 
 ## Proje Yapısı
+
 ```
 twitter_back/
-├── main.py          # Ana çalıştırıcı
+├── main.py          # CLI menüsü
+├── worker.py        # Playwright tarayıcı süreç yönetimi
 ├── config.json      # Chromium ve eklenti yolu
-├── requirements.txt # Python bağımlılıkları
+├── requirements.txt
 ├── extension/       # Tarayıcı eklentisi
 ├── profiles/        # Hesap profilleri (git'e eklenmez)
-└── ISSUES.md        # Bilinen sorunlar ve çözümler
+├── sessions.json    # Oturum kayıtları (git'e eklenmez)
+├── ISSUES.md        # Bilinen sorunlar
+└── PUSH_LOG.md      # Versiyon geçmişi
 ```
+
+## Bilinen Sorunlar
+Bkz. [ISSUES.md](./ISSUES.md)
