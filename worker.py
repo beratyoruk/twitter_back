@@ -26,10 +26,35 @@ def start_worker(account_id, username, password, profile_dir):
     
     with sync_playwright() as p:
         args = [
+            # Ungoogled Chromium Flags (All Platforms)
+            "--disable-beforeunload",
             "--disable-search-engine-collection",
             "--fingerprinting-canvas-image-data-noise",
+            "--fingerprinting-canvas-measuretext-noise",
             "--fingerprinting-client-rects-noise",
+            "--hide-crashed-bubble",
+            "--keep-old-history",
+            "--max-connections-per-host=15",
             "--popups-to-tabs",
+            
+            # Windows Specific Portable Data Flags
+            "--disable-encryption",
+            "--disable-machine-id",
+            
+            # Desktop Specific 
+            "--disable-sharing-hub",
+            "--remove-tabsearch-button",
+            
+            # Existing Chromium Flags
+            "--disable-top-sites",
+            "--no-default-browser-check",
+            "--no-pings",
+            "--webrtc-ip-handling-policy=default_public_interface_only",
+            
+            # Feature Flags
+            "--enable-features=MinimalReferrers,NoCrossOriginReferrers,ReducedSystemInfo,RemoveClientHints,SpoofWebGLInfo",
+            
+            # Extension Flags
             f"--disable-extensions-except={extension_path}",
             f"--load-extension={extension_path}"
         ]
