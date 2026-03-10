@@ -6,6 +6,7 @@ db.sqlite3
 profiles/
 logs/
 sessions.json
+sessions.db
 ungoogled_installer.exe
 ungoogled_chromium/
 memory-bank/

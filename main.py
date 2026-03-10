@@ -1,12 +1,14 @@
 import os
 import json
+import sqlite3
 import subprocess
 import sys
 import time
 import shutil
+import threading
 import pyautogui
 
-SESSIONS_FILE = "sessions.json"
+DB_FILE = "sessions.db"
 CONFIG_FILE = "config.json"
 
 CHROME_FLAGS = [
@@ -31,96 +33,80 @@ CHROME_FLAGS = [
     "--start-maximized",
 ]
 
+# ─── Database ───────────────────────────────────────────────────────────────
+
+def db_connect():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def db_init():
+    with db_connect() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                profile_dir TEXT NOT NULL,
+                status TEXT DEFAULT 'closed',
+                pid INTEGER
+            )
+        """)
+
+def db_all():
+    with db_connect() as conn:
+        return [dict(r) for r in conn.execute("SELECT * FROM sessions ORDER BY id")]
+
+def db_get(email):
+    with db_connect() as conn:
+        r = conn.execute("SELECT * FROM sessions WHERE email=?", (email,)).fetchone()
+        return dict(r) if r else None
+
+def db_add(email, profile_dir):
+    with db_connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO sessions (email, profile_dir, status, pid) VALUES (?,?,?,?)",
+            (email, profile_dir, "closed", None)
+        )
+
+def db_delete(session_id):
+    with db_connect() as conn:
+        conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+
+def db_set_status(session_id, status, pid=None):
+    with db_connect() as conn:
+        conn.execute(
+            "UPDATE sessions SET status=?, pid=? WHERE id=?",
+            (status, pid, session_id)
+        )
+
+# ─── Config ─────────────────────────────────────────────────────────────────
+
 def load_config():
-    with open(CONFIG_FILE, "r") as f:
+    with open(CONFIG_FILE) as f:
         return json.load(f)
 
-def load_sessions():
-    if not os.path.exists(SESSIONS_FILE):
-        return []
-    with open(SESSIONS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+# ─── Process ────────────────────────────────────────────────────────────────
 
-def save_sessions(sessions):
-    with open(SESSIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(sessions, f, indent=2, ensure_ascii=False)
-
-def lock_path(profile_dir):
-    return os.path.join(profile_dir, ".session_running")
-
-def is_profile_running(profile_dir):
-    """Lock dosyasına yazar'ı hala yaşıyor mu kontrol eder (PID kontrolü)."""
-    lp = lock_path(profile_dir)
-    if not os.path.exists(lp):
+def is_pid_alive(pid):
+    if not pid:
         return False
     try:
-        with open(lp, "r") as f:
-            pid = int(f.read().strip())
-        # PowerShell ile PID kontrolü
         result = subprocess.run(
-            ["powershell", "-Command", f"(Get-Process -Id {pid} -ErrorAction SilentlyContinue) -ne $null"],
+            ["powershell", "-Command",
+             f"(Get-Process -Id {pid} -ErrorAction SilentlyContinue) -ne $null"],
             capture_output=True, text=True, timeout=4
         )
-        alive = result.stdout.strip().lower() == "true"
-        if not alive:
-            os.remove(lp)
-        return alive
+        return result.stdout.strip().lower() == "true"
     except Exception:
-        try:
-            os.remove(lp)
-        except Exception:
-            pass
         return False
 
-def write_lock(profile_dir, pid):
-    lp = lock_path(profile_dir)
-    with open(lp, "w") as f:
-        f.write(str(pid))
-
-def remove_lock(profile_dir):
-    lp = lock_path(profile_dir)
+def find_chrome_pid(profile_dir):
+    """profile_dir ile eşleşen chrome.exe sürecinin PID'ini döner."""
     try:
-        os.remove(lp)
-    except Exception:
-        pass
-
-def kill_profile(profile_dir):
-    """Profil dizinine sahip tüm chrome.exe süreçlerini sonlandırır."""
-    lp = lock_path(profile_dir)
-    try:
-        if os.path.exists(lp):
-            with open(lp) as f:
-                pid = f.read().strip()
-            subprocess.run(
-                ["powershell", "-Command", f"Stop-Process -Id {pid} -Force -ErrorAction SilentlyContinue"],
-                capture_output=True
-            )
-            os.remove(lp)
-    except Exception:
-        pass
-
-def launch_browser(chrome_path, profile_dir, extension_path, urls):
-    if isinstance(urls, str):
-        urls = [urls]
-    args = [
-        chrome_path,
-        f"--user-data-dir={profile_dir}",
-        f"--load-extension={extension_path}",
-    ] + CHROME_FLAGS + urls
-    proc = subprocess.Popen(args)
-    time.sleep(2)
-    # Ana Chrome işleminin gerçek PID'ini bul (en yüksek bellek kullanan chrome.exe)
-    real_pid = find_real_chrome_pid(profile_dir) or proc.pid
-    write_lock(profile_dir, real_pid)
-    return real_pid
-
-def find_real_chrome_pid(profile_dir):
-    """user-data-dir içeren Chrome sürecinin PID'ini PowerShell ile bulur."""
-    try:
-        safe_path = profile_dir.replace("\\", "\\\\")
+        base = os.path.basename(profile_dir)
         cmd = (
             f"Get-WmiObject Win32_Process | "
-            f"Where-Object {{$_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*{os.path.basename(profile_dir)}*'}} | "
+            f"Where-Object {{$_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*{base}*'}} | "
             f"Sort-Object WorkingSetSize -Descending | "
             f"Select-Object -First 1 -ExpandProperty ProcessId"
         )
@@ -129,127 +115,123 @@ def find_real_chrome_pid(profile_dir):
             capture_output=True, text=True, timeout=6
         )
         pid_str = result.stdout.strip()
-        if pid_str.isdigit():
-            return int(pid_str)
+        return int(pid_str) if pid_str.isdigit() else None
+    except Exception:
+        return None
+
+def kill_pid(pid):
+    if not pid:
+        return
+    try:
+        subprocess.run(
+            ["powershell", "-Command", f"Stop-Process -Id {pid} -Force -ErrorAction SilentlyContinue"],
+            capture_output=True, timeout=5
+        )
     except Exception:
         pass
-    return None
 
-def focus_browser_window(timeout=15):
-    import pygetwindow as gw
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        for title in gw.getAllTitles():
-            if any(k in title.lower() for k in ["chromium", "chrome", "google", "sign in", "accounts"]):
-                try:
-                    win = gw.getWindowsWithTitle(title)[0]
-                    win.activate()
-                    time.sleep(0.8)
-                    return True
-                except Exception:
-                    pass
-        time.sleep(0.5)
-    return False
+def launch_browser(chrome_path, profile_dir, extension_path, urls):
+    if isinstance(urls, str):
+        urls = [urls]
+    args = [chrome_path, f"--user-data-dir={profile_dir}", f"--load-extension={extension_path}"] + CHROME_FLAGS + urls
+    proc = subprocess.Popen(args)
+    time.sleep(2.5)
+    real_pid = find_chrome_pid(profile_dir) or proc.pid
+    return real_pid
 
-def human_type(text, min_delay=0.06, max_delay=0.14):
-    """pynput ile karakter karakter, rastgele gecikmeli insan gibi yazar."""
+# ─── Background Monitor ──────────────────────────────────────────────────────
+
+def monitor_sessions():
+    """Her 10 saniyede açık oturumları kontrol eder, kapananları DB'de kapalı işaretler."""
+    while True:
+        time.sleep(10)
+        try:
+            sessions = db_all()
+            for s in sessions:
+                if s["status"] == "open":
+                    if not is_pid_alive(s["pid"]):
+                        db_set_status(s["id"], "closed", None)
+        except Exception:
+            pass
+
+# ─── Human Typing ────────────────────────────────────────────────────────────
+
+def human_type(text):
     import random
-    from pynput.keyboard import Controller as KB, Key
+    from pynput.keyboard import Controller as KB
     kb = KB()
     for ch in text:
         kb.type(ch)
-        time.sleep(random.uniform(min_delay, max_delay))
+        time.sleep(random.uniform(0.07, 0.15))
 
-def wait_for_page_load(keyword_list, timeout=20):
-    """Pencere başlığında belirtilen keyword'lerden biri görünene kadar bekler."""
+def wait_window(keywords, timeout=20):
     import pygetwindow as gw
     deadline = time.time() + timeout
     while time.time() < deadline:
         for title in gw.getAllTitles():
-            tl = title.lower()
-            if any(k in tl for k in keyword_list):
+            if any(k in title.lower() for k in keywords):
                 return title
         time.sleep(0.5)
     return None
 
-def activate_window_by_title(title):
+def activate_win(title):
     import pygetwindow as gw
     try:
         wins = gw.getWindowsWithTitle(title)
         if wins:
-            w = wins[0]
-            w.restore()
-            w.activate()
-            time.sleep(1)
-            return True
+            wins[0].restore()
+            wins[0].activate()
+            time.sleep(1.2)
     except Exception:
         pass
-    return False
 
 def auto_google_login(email, password):
     from pynput.keyboard import Controller as KB, Key
-    import random
+    sw, sh = pyautogui.size()
 
-    # 1. Sayfanın yüklenmesini bekle (pencere başlığında google / sign kelimeler çıkana kadar)
-    print("  → Google giriş sayfası bekleniyor...")
-    title = wait_for_page_load(
-        ["chromium", "chrome", "google", "accounts", "sign", "oturum", "giriş"],
-        timeout=20
-    )
+    print("  → Giriş sayfası yükleniyor...")
+    title = wait_window(["chromium", "chrome", "google", "accounts", "sign", "oturum", "giriş"])
     if not title:
-        print("  ! Tarayıcı penceresi bulunamadı. Manuel giriş yapın.")
+        print("  ! Pencere bulunamadı, manuel giriş yapın.")
         return
 
-    activate_window_by_title(title)
+    activate_win(title)
     time.sleep(1.5)
 
-    # 2. Email kutusunu bul ve tıkla (Google sayfasında sol-orta bölgede olur)
-    sw, sh = pyautogui.size()
-    # Google sign-in email input yaklaşık dikey %42 konumunda
-    ex, ey = sw // 2, int(sh * 0.42)
-    pyautogui.moveTo(ex, ey, duration=0.4)
+    # Email alanını tıkla (dikey ~%42)
+    pyautogui.moveTo(sw // 2, int(sh * 0.42), duration=0.4)
     pyautogui.click()
     time.sleep(0.8)
-
-    # 3. Varsa eski içeriği temizle, karakteri karakter yaz
-    print("  → E-posta yazılıyor...")
     pyautogui.hotkey('ctrl', 'a')
     time.sleep(0.2)
+
+    print("  → E-posta yazılıyor...")
     human_type(email)
     time.sleep(0.4)
+    KB().press(Key.enter)
+    KB().release(Key.enter)
 
-    kb = KB()
-    kb.press(Key.enter)
-    kb.release(Key.enter)
+    # Şifre sayfasının yüklenmesini bekle
+    print("  → Şifre sayfası yükleniyor...")
+    time.sleep(4)
 
-    # 4. Şifre sayfasının yüklenmesini bekle
-    print("  → Şifre sayfası bekleniyor...")
-    time.sleep(2)
-    title2 = wait_for_page_load(
-        ["password", "şifre", "hosgeldiniz", "hoş geldiniz", "welcome", "enter your password"],
-        timeout=12
-    )
-    # Şifre sayfası başlıkta farklı görünebilir; güvenli tarafta kal
-    time.sleep(2.5)
-
-    # 5. Şifre kutusunu tıkla (yaklaşık %48 dikey)
-    py = int(sh * 0.48)
-    pyautogui.moveTo(sw // 2, py, duration=0.4)
+    # Şifre alanını tıkla (dikey ~%48)
+    pyautogui.moveTo(sw // 2, int(sh * 0.48), duration=0.4)
     pyautogui.click()
     time.sleep(0.8)
-
-    print("  → Şifre yazılıyor...")
     pyautogui.hotkey('ctrl', 'a')
     time.sleep(0.2)
+
+    print("  → Şifre yazılıyor...")
     human_type(password)
     time.sleep(0.4)
+    KB().press(Key.enter)
+    KB().release(Key.enter)
 
-    kb.press(Key.enter)
-    kb.release(Key.enter)
-
-    print("  → Giriş gönderildi. 2FA varsa tarayıcıda tamamlayın, sonra Enter'a basın.")
+    print("  → Giriş yapıldı. 2FA varsa tarayıcıda tamamlayıp Enter'a basın.")
     time.sleep(3)
 
+# ─── Menu ────────────────────────────────────────────────────────────────────
 
 def menu_add_session():
     config = load_config()
@@ -257,17 +239,15 @@ def menu_add_session():
     extension_path = os.path.abspath(config.get("extension_path", "extension"))
 
     if not chrome_path or not os.path.exists(chrome_path):
-        print("HATA: config.json içinde chromium_path doğru ayarlanmamış.")
+        print("HATA: chromium_path config.json'da yanlış.")
         return
 
-    email = input("Google Mail Adresi: ").strip()
+    email = input("Google Mail: ").strip()
     password = input("Şifre: ").strip()
     if not email or not password:
-        print("Mail ve şifre boş bırakılamaz.")
         return
 
-    sessions = load_sessions()
-    if any(s["email"] == email for s in sessions):
+    if db_get(email):
         print(f"Bu hesap zaten kayıtlı: {email}")
         return
 
@@ -275,107 +255,103 @@ def menu_add_session():
     os.makedirs(profile_dir, exist_ok=True)
 
     print(f"\n→ Tarayıcı açılıyor: {email}")
-    print("  Lütfen 5 saniye boyunca başka bir şeye tıklamayın!\n")
-
     pid = launch_browser(chrome_path, profile_dir, extension_path, "https://accounts.google.com/signin")
     auto_google_login(email, password)
 
     input("\n[Enter] Giriş tamamlandı, devam et...")
+    kill_pid(pid)
 
-    kill_profile(profile_dir)
+    db_add(email, profile_dir)
+    print(f"✓ Oturum kaydedildi: {email}")
 
-    sessions.append({"email": email, "profile_dir": profile_dir})
-    save_sessions(sessions)
-    print(f"\n✓ Oturum kaydedildi: {email}")
-
-def menu_list_sessions():
-    sessions = load_sessions()
+def menu_list():
+    sessions = db_all()
     if not sessions:
         print("Kayıtlı oturum yok.")
         return
-    print("\n--- Kayıtlı Oturumlar ---")
-    for i, s in enumerate(sessions):
-        alive = is_profile_running(s["profile_dir"])
-        durum = "🟢 Aktif" if alive else "🔴 Kapalı"
-        print(f"  [{i+1}] {s['email']} — {durum}")
+    print("\n--- Oturumlar ---")
+    for s in sessions:
+        durum = "🟢 Aktif" if s["status"] == "open" else "🔴 Kapalı"
+        print(f"  [{s['id']}] {s['email']} — {durum}")
     print()
 
-def menu_delete_session():
-    sessions = load_sessions()
+def menu_delete():
+    sessions = db_all()
     if not sessions:
         print("Silinecek oturum yok.")
         return
-    menu_list_sessions()
+    menu_list()
     try:
-        idx = int(input("Silinecek oturum numarası (0=iptal): ")) - 1
+        sid = int(input("Silinecek ID: "))
     except ValueError:
         return
-    if idx < 0 or idx >= len(sessions):
+
+    s = next((x for x in sessions if x["id"] == sid), None)
+    if not s:
+        print("Geçersiz ID.")
         return
 
-    s = sessions.pop(idx)
-    kill_profile(s["profile_dir"])
-    save_sessions(sessions)
+    # Tarayıcıyı kapat
+    kill_pid(s.get("pid"))
+    time.sleep(1)
 
-    sil = input(f"Profil dosyaları da silinsin mi? ({s['email']}) [e/h]: ").lower()
+    # DB'den sil
+    db_delete(sid)
+
+    # Profil klasörünü sil
+    sil = input(f"Profil disk'ten de silinsin mi? ({s['email']}) [e/h]: ").lower()
     if sil == "e":
         shutil.rmtree(s["profile_dir"], ignore_errors=True)
         print("Profil silindi.")
-    print(f"✓ Oturum kaldırıldı: {s['email']}")
 
-def menu_open_sessions():
-    sessions = load_sessions()
+    print(f"✓ {s['email']} tamamen kaldırıldı.")
+
+def menu_open():
+    sessions = db_all()
     if not sessions:
-        print("Açılacak kayıtlı oturum yok.")
+        print("Kayıtlı oturum yok.")
         return
 
     config = load_config()
     chrome_path = config.get("chromium_path", "")
     extension_path = os.path.abspath(config.get("extension_path", "extension"))
 
-    if not chrome_path or not os.path.exists(chrome_path):
-        print("HATA: config.json içinde chromium_path doğru ayarlanmamış.")
-        return
-
-    print("\n--- Kayıtlı Oturumlar ---")
-    for i, s in enumerate(sessions):
-        alive = is_profile_running(s["profile_dir"])
-        durum = "🟢 Aktif" if alive else "🔴 Kapalı"
-        print(f"  [{i+1}] {s['email']} — {durum}")
-    print("  [0] Tümünü aç\n")
-
+    menu_list()
+    print("  [0] Tümünü aç")
     try:
         sec = int(input("Seçim: "))
     except ValueError:
         return
 
     if sec == 0:
-        targets = list(range(len(sessions)))
-    elif 1 <= sec <= len(sessions):
-        targets = [sec - 1]
+        targets = sessions
     else:
-        print("Geçersiz seçim.")
-        return
+        targets = [s for s in sessions if s["id"] == sec]
+        if not targets:
+            print("Geçersiz ID.")
+            return
 
-    for idx in targets:
-        s = sessions[idx]
-        if is_profile_running(s["profile_dir"]):
+    for s in targets:
+        if s["status"] == "open" and is_pid_alive(s["pid"]):
             print(f"Zaten açık: {s['email']}")
             continue
-        launch_browser(
+        pid = launch_browser(
             chrome_path, s["profile_dir"], extension_path,
             ["https://myaccount.google.com/", "https://twitter.com/"]
         )
-        print(f"✓ Açıldı: {s['email']} (Google + Twitter)")
-
-    save_sessions(sessions)
+        db_set_status(s["id"], "open", pid)
+        print(f"✓ Açıldı: {s['email']} (Google + Twitter, PID:{pid})")
 
 def main():
+    db_init()
+    t = threading.Thread(target=monitor_sessions, daemon=True)
+    t.start()
+
     while True:
         print("\n=== Twitter Otomasyon Merkezi ===")
         print("1. Yeni Oturum Ekle (Otomatik Google Girişi)")
         print("2. Oturumları Listele")
-        print("3. Oturum Sil (+ Tarayıcıyı Kapat)")
+        print("3. Oturum Sil (Tarayıcı + DB + Profil)")
         print("4. Kayıtlı Oturumları Aç (Google + Twitter)")
         print("0. Çıkış")
         print("=================================")
@@ -385,11 +361,11 @@ def main():
         if choice == "1":
             menu_add_session()
         elif choice == "2":
-            menu_list_sessions()
+            menu_list()
         elif choice == "3":
-            menu_delete_session()
+            menu_delete()
         elif choice == "4":
-            menu_open_sessions()
+            menu_open()
         elif choice == "0":
             print("Çıkış.")
             break
