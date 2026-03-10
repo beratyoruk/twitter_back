@@ -3,27 +3,38 @@ import sys
 import time
 import json
 from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth
 
 CONFIG_FILE = "config.json"
+
+STEALTH_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'languages', {get: () => ['tr-TR', 'tr', 'en-US', 'en']});
+Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+window.chrome = {runtime: {}};
+Object.defineProperty(navigator, 'permissions', {
+    query: (p) => Promise.resolve({state: 'granted', onchange: null})
+});
+"""
 
 def load_config():
     with open(CONFIG_FILE, "r") as f:
         return json.load(f)
 
+def apply_stealth(page):
+    page.add_init_script(STEALTH_SCRIPT)
+
 def skip_optional_prompts(page):
-    """Google'ın opsiyonel adımlarını (ev adresi, telefon, gizlilik) atlar."""
-    skip_texts = ["Skip", "Not now", "Atla", "Şimdi değil", "Continue", "Devam et", "Remind me later"]
-    for _ in range(5):
+    skip_texts = ["Skip", "Not now", "Atla", "Şimdi değil", "Remind me later", "No thanks"]
+    for _ in range(6):
         time.sleep(2)
         skipped = False
         for text in skip_texts:
             try:
                 btn = page.locator(f"text={text}").first
-                if btn.is_visible(timeout=1000):
+                if btn.is_visible(timeout=800):
                     btn.click()
                     skipped = True
-                    time.sleep(1)
+                    time.sleep(1.5)
                     break
             except Exception:
                 pass
@@ -32,45 +43,58 @@ def skip_optional_prompts(page):
 
 def open_twitter_tab(browser):
     page = browser.new_page()
+    apply_stealth(page)
     page.goto("https://twitter.com/")
     return page
 
 def login_mode(browser, email, password):
     page = browser.pages[0] if browser.pages else browser.new_page()
-    stealth(page)
+    apply_stealth(page)
     page.goto("https://accounts.google.com/signin")
 
     try:
-        page.wait_for_selector('input[type="email"]', timeout=10000)
-        page.type('input[type="email"]', email, delay=120)
-        page.keyboard.press("Enter")
-
-        time.sleep(3)
-        page.wait_for_selector('input[type="password"]', timeout=10000)
+        page.wait_for_selector('input[type="email"]', timeout=15000)
         time.sleep(1)
-        page.type('input[type="password"]', password, delay=150)
+        page.type('input[type="email"]', email, delay=130)
+        time.sleep(0.8)
         page.keyboard.press("Enter")
 
-        print(f"[{email}] Giriş yapıldı. Opsiyonel adımlar atlanıyor...")
         time.sleep(3)
+        page.wait_for_selector('input[type="password"]', timeout=15000)
+        time.sleep(1.2)
+        page.type('input[type="password"]', password, delay=160)
+        time.sleep(0.8)
+        page.keyboard.press("Enter")
+
+        print(f"[{email}] Giriş adımları tamamlandı.")
+        time.sleep(4)
+
+        # Hala accounts.google.com'daysa opsiyonel adımlar geliyor olabilir
+        # ya da 2FA - kullanıcı tarayıcıdan manuel tamamlayana kadar bekle
+        try:
+            page.wait_for_url(
+                lambda url: "accounts.google.com" not in url,
+                timeout=120000  # 2 dakika bekle
+            )
+        except Exception:
+            print(f"[{email}] Zaman aşımı — oturum zaten açık veya manuel işlem gerekiyor.")
+
         skip_optional_prompts(page)
 
-        # Google'dan çıkıldıktan sonra Twitter'ı aynı pencerede yeni sekmede aç
         print(f"[{email}] Twitter açılıyor...")
-        twitter_page = open_twitter_tab(browser)
-        stealth(twitter_page)
+        open_twitter_tab(browser)
         print(f"[{email}] Oturum aktif.")
+
     except Exception as e:
-        print(f"[{email}] Giriş sırasında hata: {e}")
+        print(f"[{email}] Hata: {e}")
         try:
             open_twitter_tab(browser)
         except Exception:
             pass
 
 def resume_mode(browser, email):
-    """Kayıtlı profil çerezleriyle Twitter'ı doğrudan açar, yeniden giriş yapmaz."""
     page = browser.pages[0] if browser.pages else browser.new_page()
-    stealth(page)
+    apply_stealth(page)
     print(f"[{email}] Mevcut oturum yükleniyor...")
     page.goto("https://twitter.com/")
     print(f"[{email}] Oturum aktif.")
@@ -109,6 +133,7 @@ def run():
         "--webrtc-ip-handling-policy=default_public_interface_only",
         "--enable-features=MinimalReferrers,NoCrossOriginReferrers,ReducedSystemInfo,RemoveClientHints,SpoofWebGLInfo",
         "--disable-blink-features=AutomationControlled",
+        "--start-maximized",
         f"--disable-extensions-except={extension_path}",
         f"--load-extension={extension_path}",
     ]
@@ -129,7 +154,6 @@ def run():
         else:
             resume_mode(browser, email)
 
-        # Tüm sekmeler kapanana kadar bekle
         try:
             while browser.pages:
                 time.sleep(2)
